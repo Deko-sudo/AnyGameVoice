@@ -1,0 +1,46 @@
+# Core
+fastapi>=0.104.0
+uvicorn>=0.24.0
+pydantic>=2.5.0
+
+# Audio
+ffmpeg-python>=0.2.0
+pydub>=0.25.1
+librosa>=0.10.0
+soundfile>=0.12.1
+audioread>=3.0.0
+
+# TTS (uncomment what you need)
+# TTS>=0.22.0
+# piper-tts>=1.2.0
+
+# Hardware detection
+psutil>=5.9.0
+GPUtil>=1.4.0
+
+# AI Providers
+openai>=1.3.0
+anthropic>=0.7.0
+groq>=0.4.0
+mistralai>=0.0.10
+ollama>=0.1.6
+
+# Search
+tavily-python>=0.3.0
+requests>=2.31.0
+beautifulsoup4>=4.12.0
+
+# Utilities
+python-dotenv>=1.0.0
+rich>=13.7.0
+typer>=0.9.0
+aiofiles>=23.2.1
+
+# Testing
+pytest>=7.4.0
+pytest-cov>=4.1.0
+
+# Development
+black>=23.11.0
+flake8>=6.1.0
+mypy>=1.7.0

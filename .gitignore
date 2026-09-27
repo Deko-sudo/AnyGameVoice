@@ -1,0 +1,61 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project specific (ML weights / generated audio - root only, must not ignore app/models/)
+*.wav
+*.mp3
+*.ogg
+*.pth
+*.onnx
+/models/
+/cache/
+/backups/
+*.log
+
+# Environment
+.env
+.env.local
+
+# User data
+voices/user/*
+!voices/user/.gitkeep
+
+# Config
+config.json
+settings.json
