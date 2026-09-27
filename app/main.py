@@ -63,7 +63,8 @@ def cmd_config(action: str):
         sys.exit(2)
 
 
-def cmd_mod(folder: str, out: str, voice: str = "", engine: str = "piper", workers: int = 2, emotion: str = "neutral"):
+def cmd_mod(folder: str, out: str, voice: str = "", engine: str = "piper", workers: int = 2, emotion: str = "neutral",
+            translate_to: str = "", provider: str = "ollama"):
     """Batch pipeline: extract -> synthesize via queue -> wavs + SRT sidecar."""
     import os
 
@@ -77,6 +78,11 @@ def cmd_mod(folder: str, out: str, voice: str = "", engine: str = "piper", worke
     if not lines:
         print(f"No dialogue extracted from {folder}.")
         return
+    if translate_to:
+        from app.core.translate import translate_lines
+
+        lines = translate_lines(lines, translate_to, provider=provider)
+        print(f"Translated {len(lines)} lines -> {translate_to} ({provider}).")
     os.makedirs(out, exist_ok=True)
     q = TaskQueue(workers=workers)
     jobs = []
@@ -139,6 +145,16 @@ def cmd_unpack(target: str, out: str, engine: str = "auto", unrealpak: str = "",
             print(f"  [{kind}] {p}")
 
 
+def cmd_translate(text: str, to: str, source: str = "auto", provider: str = "ollama"):
+    """Translate one line via the provider router."""
+    import os as _os
+
+    from app.core.translate import translate_text
+
+    print(translate_text(text, target=to, source=source, provider=provider,
+                         api_key=_os.environ.get("TRANSLATE_API_KEY", "")))
+
+
 def cmd_ui(port: int = 8000):
     """Launch the local web UI."""
     from app.ui_server import run
@@ -163,6 +179,7 @@ def main(argv=None):
         print("    python app/main.py config [--show|--delete|--save-scan]")
         print("    python app/main.py mod <game_folder> --out <dir> [--voice model.onnx] [--engine piper] [--workers 2]")
         print("    python app/main.py unpack <game_or_container> --out <dir> [--engine auto|unity|unreal] [--unrealpak path] [--aes-key key]")
+        print("    python app/main.py translate \"Hello\" --to ru [--from en] [--provider ollama]")
         print()
         print("=" * 50)
         return
@@ -184,9 +201,12 @@ def main(argv=None):
         p.add_argument("--voice", default="")
         p.add_argument("--engine", default="piper")
         p.add_argument("--emotion", default="neutral")
+        p.add_argument("--translate-to", default="")
+        p.add_argument("--provider", default="ollama")
         p.add_argument("--workers", type=int, default=2)
         a = p.parse_args(rest)
-        cmd_mod(a.folder, a.out, voice=a.voice, engine=a.engine, workers=a.workers, emotion=a.emotion)
+        cmd_mod(a.folder, a.out, voice=a.voice, engine=a.engine, workers=a.workers, emotion=a.emotion,
+                translate_to=a.translate_to, provider=a.provider)
     elif cmd == "unpack" and rest:
         import argparse
 
@@ -198,8 +218,18 @@ def main(argv=None):
         p.add_argument("--aes-key", default="")
         a = p.parse_args(rest)
         cmd_unpack(a.target, a.out, engine=a.engine, unrealpak=a.unrealpak, aes_key=a.aes_key)
+    elif cmd == "translate" and rest:
+        import argparse
+
+        p = argparse.ArgumentParser(prog="translate")
+        p.add_argument("text")
+        p.add_argument("--to", required=True)
+        p.add_argument("--from", dest="source", default="auto")
+        p.add_argument("--provider", default="ollama")
+        a = p.parse_args(rest)
+        cmd_translate(a.text, a.to, source=a.source, provider=a.provider)
     else:
-        print(f"Unknown command: {cmd}. Try: scan | extract | ui | config | mod | unpack")
+        print(f"Unknown command: {cmd}. Try: scan | extract | ui | config | mod | unpack | translate")
         sys.exit(2)
 
 

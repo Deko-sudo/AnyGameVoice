@@ -32,7 +32,7 @@ def test_batch_mod(tmp_path):
     (game / "game" / "script.rpy").write_text('e "Hello there!"\n"Wind."\n', encoding="utf-8")
     out = tmp_path / "out"
 
-    def fake_gen(text, out_path, voice="", engine="piper"):
+    def fake_gen(text, out_path, voice="", engine="piper", emotion="neutral"):
         with open(out_path, "wb") as fh:
             fh.write(b"FAKEWAV" + text.encode())
         return out_path
