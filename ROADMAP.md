@@ -2,10 +2,10 @@
 
 ## Current Focus: Phase 1 - Core Engine
 
-- [ ] Game folder scanning
-- [ ] Ren'Py dialogue extraction
-- [ ] Basic TTS integration (Piper)
-- [ ] Audio replacement with backup
+- [x] Game folder scanning
+- [x] Ren'Py dialogue extraction
+- [x] Basic TTS integration (Piper)
+- [x] Audio replacement with backup
 
 ## Upcoming Phases
 

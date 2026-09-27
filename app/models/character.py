@@ -1,10 +1,13 @@
 """Character model."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass
 class Character:
-    """Game character."""
+    """Game character with an assigned voice."""
 
     name: str = ""
+    voice: str = ""
+    line_count: int = 0
+    aliases: list = field(default_factory=list)
