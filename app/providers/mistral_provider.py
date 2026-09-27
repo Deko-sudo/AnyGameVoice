@@ -1,7 +1,14 @@
-"""Mistral provider."""
+"""Mistral provider (OpenAI-compatible)."""
 
-from .base import BaseProvider
+from .openai_provider import OpenAICompatibleProvider
+
+__all__ = ["MistralProvider"]
 
 
-class MistralProvider(BaseProvider):
-    """Mistral adapter (stub)."""
+class MistralProvider(OpenAICompatibleProvider):
+    """Mistral AI adapter."""
+
+    name = "mistral"
+    env_key = "MISTRAL_API_KEY"
+    default_model = "mistral-small-latest"
+    api_url = "https://api.mistral.ai/v1/chat/completions"
