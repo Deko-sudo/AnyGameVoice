@@ -37,3 +37,20 @@ def test_generate_empty_text():
 
     with pytest.raises(ValueError):
         generate_voice("   ")
+
+
+def test_engine_registry():
+    from app.core.tts.generator import get_engine, list_engines
+
+    engines = list_engines()
+    assert set(engines) == {"piper", "xtts", "bark", "silero"}
+    assert all(isinstance(v, bool) for v in engines.values())
+    with pytest.raises(ValueError):
+        get_engine("nonexistent")
+
+
+def test_generate_needs_voice_model():
+    from app.core.tts.generator import generate_voice
+
+    with pytest.raises((FileNotFoundError, RuntimeError)):
+        generate_voice("hello")  # default voice -> helpful error, no crash
