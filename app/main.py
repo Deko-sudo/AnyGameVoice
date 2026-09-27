@@ -42,6 +42,27 @@ def cmd_extract(folder: str, limit: int = 20):
         print(f"[{ln.source_file}:{ln.line_no}] {ln.speaker}: {ln.text}")
 
 
+def cmd_config(action: str):
+    """Privacy controls: --show / --delete, or save current hardware scan."""
+    from app.utils.config import delete_data, show_data
+
+    if action == "--show":
+        print(json.dumps(show_data(), indent=2, ensure_ascii=False))
+    elif action == "--delete":
+        print("deleted" if delete_data() else "nothing stored")
+    elif action == "--save-scan":
+        from app.core.scanner.hardware import recommend_settings, scan_hardware
+        from app.utils.config import Config
+
+        hw = scan_hardware()
+        cfg = Config.load()
+        cfg.set_hardware(hw, recommend_settings(hw))
+        print(f"saved to {cfg.save()}")
+    else:
+        print("Usage: python app/main.py config [--show|--delete|--save-scan]")
+        sys.exit(2)
+
+
 def cmd_ui(port: int = 8000):
     """Launch the local web UI."""
     from app.ui_server import run
@@ -63,6 +84,7 @@ def main(argv=None):
         print("    python app/main.py scan <game_folder>")
         print("    python app/main.py extract <game_folder>")
         print("    python app/main.py ui [port]")
+        print("    python app/main.py config [--show|--delete|--save-scan]")
         print()
         print("=" * 50)
         return
@@ -73,8 +95,10 @@ def main(argv=None):
         cmd_extract(rest[0])
     elif cmd == "ui":
         cmd_ui(int(rest[0]) if rest else 8000)
+    elif cmd == "config" and rest:
+        cmd_config(rest[0])
     else:
-        print(f"Unknown command: {cmd}. Try: scan | extract | ui")
+        print(f"Unknown command: {cmd}. Try: scan | extract | ui | config")
         sys.exit(2)
 
 
