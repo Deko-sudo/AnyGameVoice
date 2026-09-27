@@ -42,6 +42,14 @@ def cmd_extract(folder: str, limit: int = 20):
         print(f"[{ln.source_file}:{ln.line_no}] {ln.speaker}: {ln.text}")
 
 
+def cmd_ui(port: int = 8000):
+    """Launch the local web UI."""
+    from app.ui_server import run
+
+    print(f"AnyGameVoice UI: http://127.0.0.1:{port}  (Ctrl+C to stop)")
+    run(port=port)
+
+
 def main(argv=None):
     """Main entry point for the application."""
     argv = sys.argv[1:] if argv is None else argv
@@ -54,6 +62,7 @@ def main(argv=None):
         print("  Usage:")
         print("    python app/main.py scan <game_folder>")
         print("    python app/main.py extract <game_folder>")
+        print("    python app/main.py ui [port]")
         print()
         print("=" * 50)
         return
@@ -62,8 +71,10 @@ def main(argv=None):
         cmd_scan(rest[0])
     elif cmd == "extract" and rest:
         cmd_extract(rest[0])
+    elif cmd == "ui":
+        cmd_ui(int(rest[0]) if rest else 8000)
     else:
-        print(f"Unknown command: {cmd}. Try: scan | extract")
+        print(f"Unknown command: {cmd}. Try: scan | extract | ui")
         sys.exit(2)
 
 

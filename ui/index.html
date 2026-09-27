@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AnyGameVoice</title>
+<style>
+  :root { color-scheme: dark; }
+  body { font-family: system-ui, sans-serif; background: #14161a; color: #e8e8e8; margin: 0; padding: 24px; }
+  h1 { font-size: 1.6rem; }
+  .card { background: #1e2127; border: 1px solid #333; border-radius: 10px; padding: 16px; margin: 12px 0; }
+  input[type=text] { width: 70%; padding: 8px; border-radius: 6px; border: 1px solid #555; background: #101216; color: #eee; }
+  button { padding: 8px 14px; margin: 4px; border-radius: 6px; border: 1px solid #555; background: #2b6cb0; color: #fff; cursor: pointer; }
+  button:hover { background: #2c5282; }
+  #drop { border: 2px dashed #555; border-radius: 10px; padding: 28px; text-align: center; color: #aaa; }
+  #drop.over { border-color: #2b6cb0; color: #fff; }
+  pre { background: #101216; padding: 12px; border-radius: 8px; overflow: auto; max-height: 400px; }
+  table { border-collapse: collapse; width: 100%; }
+  td, th { border-bottom: 1px solid #333; padding: 6px; text-align: left; font-size: 0.9rem; }
+</style>
+</head>
+<body>
+<h1>🎮 AnyGameVoice <small style="color:#888">local-first voice modding</small></h1>
+
+<div class="card">
+  <div id="drop">Drop files here (names preview) or type the game folder path below</div>
+  <p><input type="text" id="path" placeholder="C:\Games\MyRenpyGame"></p>
+  <button onclick="doScan()">Scan folder</button>
+  <button onclick="doExtract()">Extract dialogue</button>
+  <button onclick="doVoices()">List voices</button>
+</div>
+
+<div class="card"><h3>Result</h3><pre id="out">Ready. Everything runs locally.</pre></div>
+<div class="card"><h3>Dialogue</h3><div id="dlg"><i>No extraction yet.</i></div></div>
+
+<script>
+const out = document.getElementById('out');
+const drop = document.getElementById('drop');
+drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
+drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+drop.addEventListener('drop', e => {
+  e.preventDefault(); drop.classList.remove('over');
+  const names = [...e.dataTransfer.files].slice(0, 10).map(f => f.name).join('\n');
+  out.textContent = 'Dropped files (preview only — browsers hide real paths):\n' + names +
+    '\n\nType the full game folder path above, then Scan.';
+});
+async function post(api, body) {
+  const r = await fetch(api, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+  return r.json();
+}
+function gamePath() { return document.getElementById('path').value.trim(); }
+async function doScan() {
+  out.textContent = 'Scanning...';
+  out.textContent = JSON.stringify(await post('/api/scan', {path: gamePath()}), null, 2);
+}
+async function doExtract() {
+  out.textContent = 'Extracting...';
+  const data = await post('/api/extract', {path: gamePath()});
+  out.textContent = `Extracted ${data.total} lines (showing ${data.lines.length}).`;
+  document.getElementById('dlg').innerHTML = '<table><tr><th>File</th><th>Speaker</th><th>Text</th></tr>' +
+    data.lines.map(l => `<tr><td>${l.source_file}:${l.line_no}</td><td>${l.speaker}</td><td>${l.text}</td></tr>`).join('') + '</table>';
+}
+async function doVoices() {
+  out.textContent = JSON.stringify(await (await fetch('/api/voices')).json(), null, 2);
+}
+</script>
+</body>
+</html>
