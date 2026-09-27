@@ -30,8 +30,24 @@
 - **Ren'Py**: `speaker "text"` + narration; `{tags}` stripped; comments skipped.
 - **RPG Maker MV/MZ**: event codes 101 (speaker) / 401 (text) / 102 (choices).
 - **Godot**: Dialogue Manager `*.dialogue` (`Name: text`); `- choices` skipped.
-- **Unity/Unreal**: compiled bundles (`.assets`, `.pak`, `.uasset`) are inventoried
-  for the replacer; text extraction needs unpacked assets (backlog).
+- **Unity**: `unpack` carves WAV/Ogg/FSB5 from `.assets`/`.bundle`/`.resource`
+  (or full AudioClip decode with optional UnityPy); text needs unpacked assets.
+- **Unreal**: `unpack` sniffs `.pak` footers, uses UnrealPak CLI when present,
+  carves `.ubulk` audio; encrypted paks need the game's AES key.
+
+## Emotions & translation
+
+- Prefix lines with `[happy]`, `[sad]`, `[angry]`, `[whisper]`, `[shouting]`
+  (or `<emotion="sad">`). Piper maps them to prosody flags; bark keeps its
+  native `[laughs]`/`[sighs]` markers; other engines get clean text.
+  CLI: `mod ... --emotion happy`.
+- `translate "Hello" --to ru --provider ollama`, or whole-pipeline
+  `mod ... --translate-to ru --provider ollama` (emotion tags preserved).
+
+## Desktop shell
+
+`docs/tauri.md`: `cargo tauri dev` wraps the web UI in a native window,
+spawning the Python backend automatically.
 
 ## Safety
 

@@ -9,6 +9,8 @@
 | `mod <folder> --out <dir> [--voice m.onnx] [--engine piper] [--workers 2]` | Batch TTS + `dialogue.srt` |
 | `ui [port]` | Local web UI (`http://127.0.0.1:8000`) |
 | `config [--show\|--delete\|--save-scan]` | Privacy controls |
+| `unpack <target> --out <dir> [--engine auto\|unity\|unreal] [--unrealpak path] [--aes-key key]` | Carve/unpack containers |
+| `translate "text" --to ru [--from en] [--provider ollama]` | One-line translation |
 
 ## Core
 
@@ -36,4 +38,8 @@
 
 - `app.utils.config.Config`, `load/save/show/delete` (local `~/.anygamevoice/config.json`)
 - `app.utils.audio_utils.estimate_duration/to_srt/to_vtt/fmt_timestamp`
+- `app.utils.audio_utils.find_embedded_audio/carve_embedded_audio`
+- `app.core.tts.emotions.parse_emotion/strip_emotion_tags/piper_flags/apply_emotion`
+- `app.core.translate.translate_text/translate_lines`
+- `app.ui_server.start_mod_job/mod_job_status` (+ `POST /api/mod`, `GET /api/mod/{id}`)
 - `app.utils.file_utils.ensure_dir`, `app.utils.logger.log`

@@ -9,13 +9,57 @@ Endpoints:
   POST /api/scan      -> {path} => hardware + access + folder scan
   POST /api/extract   -> {path, limit?} => dialogue lines
   GET  /api/voices    -> voice presets
+  POST /api/mod       -> {path, out, ...} => background job {job_id}
+  GET  /api/mod/{id}  -> job status
 """
 
+import itertools
+import threading
 from pathlib import Path
 
-INDEX = Path(__file__).resolve().parent / "index.html"
+INDEX = Path(__file__).resolve().parent.parent / "ui" / "index.html"
 
-__all__ = ["create_app"]
+__all__ = ["create_app", "start_mod_job", "mod_job_status"]
+
+_JOBS: dict = {}
+_JOB_SEQ = itertools.count(1)
+_JOBS_LOCK = threading.Lock()
+
+
+def start_mod_job(params: dict) -> int:
+    """Run cmd_mod in a background thread. Returns job id (testable, no HTTP)."""
+    from app.main import cmd_mod
+
+    job_id = next(_JOB_SEQ)
+    with _JOBS_LOCK:
+        _JOBS[job_id] = {"id": job_id, "status": "running", "params": params, "error": ""}
+    def _run():
+        try:
+            cmd_mod(
+                params.get("path", ""),
+                params.get("out", "./out"),
+                voice=params.get("voice", ""),
+                engine=params.get("engine", "piper"),
+                workers=int(params.get("workers", 2)),
+                emotion=params.get("emotion", "neutral"),
+                translate_to=params.get("translate_to", ""),
+                provider=params.get("provider", "ollama"),
+            )
+        except Exception as exc:  # noqa: BLE001 - surfaced via status
+            with _JOBS_LOCK:
+                _JOBS[job_id].update(status="failed", error=str(exc)[:500])
+        else:
+            with _JOBS_LOCK:
+                _JOBS[job_id]["status"] = "done"
+
+    threading.Thread(target=_run, daemon=True, name=f"agv-mod-{job_id}").start()
+    return job_id
+
+
+def mod_job_status(job_id: int) -> dict:
+    """Snapshot of a mod job. Raises KeyError for unknown ids."""
+    with _JOBS_LOCK:
+        return dict(_JOBS[job_id])
 
 
 def create_app():
@@ -83,6 +127,20 @@ def create_app():
                 {"name": v.name, "path": v.path, "engine": v.engine} for v in voices
             ]
         }
+
+    @app.post("/api/mod")
+    def api_mod(payload: dict):
+        payload = payload or {}
+        if not payload.get("path") or not payload.get("out"):
+            return JSONResponse({"error": "path and out are required"}, status_code=400)
+        return {"job_id": start_mod_job(payload)}
+
+    @app.get("/api/mod/{job_id}")
+    def api_mod_status(job_id: int):
+        try:
+            return mod_job_status(job_id)
+        except KeyError:
+            return JSONResponse({"error": "unknown job"}, status_code=404)
 
     return app
 

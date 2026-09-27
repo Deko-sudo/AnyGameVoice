@@ -33,6 +33,16 @@
 <div class="card"><h3>Result</h3><pre id="out">Ready. Everything runs locally.</pre></div>
 <div class="card"><h3>Dialogue</h3><div id="dlg"><i>No extraction yet.</i></div></div>
 
+<div class="card"><h3>Generate mod (background job)</h3>
+  <p><input type="text" id="outdir" placeholder="Output dir, e.g. C:\Mods\mygame-out"></p>
+  <p><input type="text" id="voicemodel" placeholder="Voice model .onnx (optional for non-piper engines)"></p>
+  <p>Engine <input type="text" id="engine" value="piper" style="width:100px">
+     Emotion <input type="text" id="emotion" value="neutral" style="width:100px"></p>
+  <button onclick="doMod()">Start mod job</button>
+  <button onclick="doJob()">Refresh job status</button>
+  <pre id="job">No job started.</pre>
+</div>
+
 <script>
 const out = document.getElementById('out');
 const drop = document.getElementById('drop');
@@ -63,6 +73,21 @@ async function doExtract() {
 async function doVoices() {
   out.textContent = JSON.stringify(await (await fetch('/api/voices')).json(), null, 2);
 }
+let lastJob = 0;
+async function doMod() {
+  const body = {path: gamePath(), out: document.getElementById('outdir').value.trim(),
+    voice: document.getElementById('voicemodel').value.trim(),
+    engine: document.getElementById('engine').value.trim() || 'piper',
+    emotion: document.getElementById('emotion').value.trim() || 'neutral'};
+  const data = await post('/api/mod', body);
+  lastJob = data.job_id || 0;
+  document.getElementById('job').textContent = 'Job ' + lastJob + ' started...';
+}
+async function doJob() {
+  if (!lastJob) return;
+  document.getElementById('job').textContent = JSON.stringify(await (await fetch('/api/mod/' + lastJob)).json(), null, 2);
+}
+setInterval(() => { if (lastJob) doJob(); }, 5000);
 </script>
 </body>
 </html>

@@ -24,6 +24,21 @@ All notable changes to this project will be documented in this file.
 - Phase 9: SRT/VTT subtitles + batch `mod` pipeline (queue TTS -> wavs + sidecar)
 - Phase 10: full docs (guide/install/user/plugin/api/faq), real `download_models.py`,
   CLI usage in README
+- Unity unpacking: magic-byte carver (WAV/Ogg/FSB5), UnityPy AudioClip decode
+  with carve fallback, `unpack` CLI
+- Unreal unpacking: `.pak` footer sniff, UnrealPak locate/run, `.ubulk` carve
+- Emotions: `[tag]`/`<emotion>` parsing, piper prosody flags, bark marker
+  passthrough, `mod --emotion`
+- Translation via provider router (`translate` CLI, `mod --translate-to`)
+- Tauri shell scaffold (`src-tauri/`, backend spawn/kill, `docs/tauri.md`),
+  `/api/mod` background jobs + web UI panel
+
+### Fixed
+- `.gitignore` `models/` shadowed `app/models/` (narrowed to `/models/`)
+- `python app/main.py` missing project root on `sys.path`
+- Detector tie bug: bare `child.glob()` generators are always truthy
+  (any subfolder gave +1 to every engine)
+- `ui_server.INDEX` pointed at `app/index.html` instead of `ui/index.html`
 
 ### Fixed
 - `.gitignore` `models/` shadowed `app/models/` (narrowed to `/models/`)

@@ -14,11 +14,15 @@
 - [x] Phase 8 — RPG Maker / Godot extractors, Unity/Unreal inventory
 - [x] Phase 9 — Subtitles (SRT/VTT) + batch `mod` pipeline
 - [x] Phase 10 — Docs + distribution scripts
+- [x] Unity unpacking (carve WAV/Ogg/FSB5, optional UnityPy decode)
+- [x] Unreal unpacking (pak inspect, UnrealPak CLI, .ubulk carve)
+- [x] Emotions (`[tag]` -> piper prosody / bark markers)
+- [x] Translation (provider router, `translate` CLI, `mod --translate-to`)
+- [x] Tauri desktop shell scaffold + `/api/mod` background jobs
 
 ## Next
 
-- [ ] Native desktop shell (Tauri) over the web UI
-- [ ] Unity AssetBundle / Unreal .pak text extraction (needs unpackers)
-- [ ] Emotion control + translation pass
+- [ ] Native single-file bundle (PyInstaller sidecar for Tauri)
+- [ ] Unity AssetBundle / Unreal .pak *text* extraction (needs unpackers)
 - [ ] Lip-sync timing export
 - [ ] Auto-updater + signed releases

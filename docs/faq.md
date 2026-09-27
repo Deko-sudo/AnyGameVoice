@@ -6,8 +6,11 @@
 Cloud providers (OpenAI etc.) only receive what you explicitly send them.
 
 **Which games work?** Text extraction: Ren'Py, RPG Maker MV/MZ, Godot
-(Dialogue Manager). Unity/Unreal: audio inventory + replacer, text
-extraction needs unpacked assets.
+(Dialogue Manager). Unity: audio carving from bundles (+UnityPy decode).
+Unreal: `.pak` inspection, UnrealPak CLI unpacking, `.ubulk` carving.
+
+**How do emotions work?** `[happy]`-style tags map to Piper prosody flags
+(heuristic, not a real emotion model). Bark keeps `[laughs]` etc. natively.
 
 **Do I need a GPU?** No. Piper and Silero run on CPU. XTTS is much
 faster with 6GB+ VRAM; Bark is slow on CPU.
