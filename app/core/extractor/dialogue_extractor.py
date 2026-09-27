@@ -1,14 +1,23 @@
 """Dialogue extractor.
 
 Routes to the engine-specific extractor based on detect_engine().
-Phase 1: Ren'Py is implemented; other engines return [].
+Implemented: Ren'Py (.rpy), RPG Maker (Map JSON), Godot (.dialogue).
+Unity/Unreal: compiled assets, text extraction not supported yet
+(use scan audio inventory + replacer instead).
 """
 
 import os
 
 from app.core.extractor.models import ExtractedLine
 
-__all__ = ["extract_dialogue"]
+__all__ = ["extract_dialogue", "supported_engines"]
+
+SUPPORTED = ("renpy", "rpgmaker", "godot")
+
+
+def supported_engines() -> tuple:
+    """Engines with text extraction."""
+    return SUPPORTED
 
 
 def extract_dialogue(game_path: str) -> list:
@@ -25,4 +34,12 @@ def extract_dialogue(game_path: str) -> list:
         from app.core.game_detector.engines.renpy import extract_renpy_folder
 
         return extract_renpy_folder(game_path)
+    if engine == "rpgmaker":
+        from app.core.game_detector.engines.rpgmaker import extract_rpgmaker_folder
+
+        return extract_rpgmaker_folder(game_path)
+    if engine == "godot":
+        from app.core.game_detector.engines.godot import extract_godot_folder
+
+        return extract_godot_folder(game_path)
     return []

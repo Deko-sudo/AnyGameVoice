@@ -37,7 +37,9 @@ def detect_engine(game_path: str) -> str:
         if scores[engine] == 0:
             try:
                 for child in root.iterdir():
-                    if child.is_dir() and any(child.glob(p) for p in patterns):
+                    # NOTE: child.glob() returns a generator (always truthy!),
+                    # so use _has_pattern which consumes it with any().
+                    if child.is_dir() and any(_has_pattern(child, p) for p in patterns):
                         scores[engine] += 1
                         break
             except OSError:
@@ -60,6 +62,10 @@ def scan_game_folder(game_path: str, max_files: int = 5000) -> dict:
         return result
     result["exists"] = True
     result["engine"] = detect_engine(game_path)
+    try:
+        result["audio_files"] = _list_audio(game_path, result["engine"])
+    except Exception:
+        result["audio_files"] = []
     total = 0
     count = 0
     scripts: list = []
@@ -71,7 +77,7 @@ def scan_game_folder(game_path: str, max_files: int = 5000) -> dict:
                 total += os.path.getsize(fp)
             except OSError:
                 pass
-            if name.endswith((".rpy", ".rpyc", ".json", ".js", ".uproject", ".godot")):
+            if name.endswith((".rpy", ".rpyc", ".json", ".js", ".uproject", ".godot", ".dialogue")):
                 rel = os.path.relpath(fp, game_path)
                 if len(scripts) < 50:
                     scripts.append(rel)
@@ -83,3 +89,31 @@ def scan_game_folder(game_path: str, max_files: int = 5000) -> dict:
     result["size_mb"] = round(total / (1024 * 1024), 1)
     result["script_files"] = scripts
     return result
+
+
+def _list_audio(game_path: str, engine: str) -> list:
+    """Engine-aware audio inventory (best effort, capped)."""
+    if engine == "unity":
+        from app.core.game_detector.engines.unity import list_audio_assets
+
+        return list_audio_assets(game_path)
+    if engine == "unreal":
+        from app.core.game_detector.engines.unreal import list_audio_assets
+
+        return list_audio_assets(game_path)
+    if engine == "godot":
+        from app.core.game_detector.engines.godot import list_audio_assets
+
+        return list_audio_assets(game_path)
+    return _generic_audio(game_path)
+
+
+def _generic_audio(game_path: str, limit: int = 200) -> list:
+    found: list = []
+    for dirpath, _dirs, files in os.walk(game_path):
+        for name in files:
+            if name.lower().endswith((".wav", ".ogg", ".mp3")):
+                found.append(os.path.relpath(os.path.join(dirpath, name), game_path))
+                if len(found) >= limit:
+                    return sorted(found)
+    return sorted(found)
