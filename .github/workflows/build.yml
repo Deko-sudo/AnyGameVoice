@@ -37,6 +37,13 @@ jobs:
           if [ "${{ runner.os }}" = "Windows" ]; then BIN="$BIN.exe"; fi
           "$BIN" | grep -q "AnyGameVoice"
           "$BIN" config --delete
+      - name: Rename bundle per triple (avoid release name collisions)
+        shell: bash
+        run: |
+          EXT=""
+          if [ "${{ runner.os }}" = "Windows" ]; then EXT=".exe"; fi
+          mv "dist/anygamevoice$EXT" "dist/anygamevoice-${{ matrix.triple }}$EXT"
+          ls dist/
       - name: Upload bundle
         uses: actions/upload-artifact@v4
         with:
