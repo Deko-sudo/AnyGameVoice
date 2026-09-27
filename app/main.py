@@ -63,7 +63,7 @@ def cmd_config(action: str):
         sys.exit(2)
 
 
-def cmd_mod(folder: str, out: str, voice: str = "", engine: str = "piper", workers: int = 2):
+def cmd_mod(folder: str, out: str, voice: str = "", engine: str = "piper", workers: int = 2, emotion: str = "neutral"):
     """Batch pipeline: extract -> synthesize via queue -> wavs + SRT sidecar."""
     import os
 
@@ -84,7 +84,7 @@ def cmd_mod(folder: str, out: str, voice: str = "", engine: str = "piper", worke
         fname = f"{i:04d}_{(ln.speaker or 'narrator')}.wav"
         dest = os.path.join(out, fname)
         tid = q.submit(
-            generate_voice_to_file, ln.text, dest, voice=voice, engine=engine,
+            generate_voice_to_file, ln.text, dest, voice=voice, engine=engine, emotion=emotion,
             priority=Priority.NORMAL, name=fname,
         )
         jobs.append((tid, dest, ln))
@@ -183,9 +183,10 @@ def main(argv=None):
         p.add_argument("--out", required=True)
         p.add_argument("--voice", default="")
         p.add_argument("--engine", default="piper")
+        p.add_argument("--emotion", default="neutral")
         p.add_argument("--workers", type=int, default=2)
         a = p.parse_args(rest)
-        cmd_mod(a.folder, a.out, voice=a.voice, engine=a.engine, workers=a.workers)
+        cmd_mod(a.folder, a.out, voice=a.voice, engine=a.engine, workers=a.workers, emotion=a.emotion)
     elif cmd == "unpack" and rest:
         import argparse
 

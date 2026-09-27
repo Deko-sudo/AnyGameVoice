@@ -23,8 +23,13 @@ class BarkEngine(BaseTTSEngine):
         except ImportError:
             return False
 
-    def synthesize(self, text: str, voice: str = "") -> bytes:
-        """Synthesize wav bytes via bark."""
+    def synthesize(self, text: str, voice: str = "", emotion: str = "neutral") -> bytes:
+        """Synthesize wav bytes via bark (emotion tags stripped, native markers kept)."""
+        from app.core.tts.emotions import apply_emotion
+
+        clean, _ = apply_emotion("bark", text)
+        if emotion != "neutral" and not clean:
+            clean = text
         try:
             import io
 
@@ -35,7 +40,7 @@ class BarkEngine(BaseTTSEngine):
             raise RuntimeError(
                 "Bark needs 'suno-bark', 'scipy'. Run: pip install suno-bark scipy"
             ) from exc
-        audio = generate_audio(text, history_prompt=voice or None)
+        audio = generate_audio(clean, history_prompt=voice or None)
         buf = io.BytesIO()
         wav_write(buf, SAMPLE_RATE, (np.array(audio) * 32767).astype(np.int16))
         return buf.getvalue()

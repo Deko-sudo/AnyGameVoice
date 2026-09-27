@@ -35,8 +35,8 @@ def get_engine(name: str, voice: str = ""):
     return cls()
 
 
-def generate_voice(text: str, voice: str = "default", engine: str = "piper") -> bytes:
-    """Generate voice audio bytes for text."""
+def generate_voice(text: str, voice: str = "default", engine: str = "piper", emotion: str = "neutral") -> bytes:
+    """Generate voice audio bytes for text (emotion tag or param)."""
     if not text or not text.strip():
         raise ValueError("text must not be empty")
     if engine == "piper" and (not voice or voice == "default"):
@@ -44,12 +44,16 @@ def generate_voice(text: str, voice: str = "default", engine: str = "piper") -> 
             "Piper needs a voice model (.onnx). "
             "Run scripts/download_models.py or pass voice=/path/to/model.onnx"
         )
-    return get_engine(engine, voice).synthesize(text, voice)
+    eng = get_engine(engine, voice)
+    try:
+        return eng.synthesize(text, voice, emotion=emotion)
+    except TypeError:
+        return eng.synthesize(text, voice)
 
 
-def generate_voice_to_file(text: str, out_path: str, voice: str = "", engine: str = "piper") -> str:
+def generate_voice_to_file(text: str, out_path: str, voice: str = "", engine: str = "piper", emotion: str = "neutral") -> str:
     """Generate audio and write to out_path. Returns out_path."""
-    data = generate_voice(text, voice=voice, engine=engine)
+    data = generate_voice(text, voice=voice, engine=engine, emotion=emotion)
     with open(out_path, "wb") as fh:
         fh.write(data)
     return out_path
