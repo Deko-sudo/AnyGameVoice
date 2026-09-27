@@ -44,6 +44,14 @@ pip install -r requirements.txt
 python app/main.py
 ```
 
+No Python on the target machine? Grab (or build) the single-file bundle —
+see [docs/bundle.md](docs/bundle.md):
+
+```bash
+python scripts/build_bundle.py   # -> dist/anygamevoice[.exe]
+dist/anygamevoice ui 8000
+```
+
 ### Usage
 
 ```bash

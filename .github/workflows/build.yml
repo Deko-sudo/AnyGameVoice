@@ -1,0 +1,64 @@
+name: Build
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  bundle:
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            triple: x86_64-pc-windows-msvc
+          - os: ubuntu-latest
+            triple: x86_64-unknown-linux-gnu
+          - os: macos-latest
+            triple: aarch64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+      - name: Build bundle
+        run: python scripts/build_bundle.py --tauri-sidecar --target ${{ matrix.triple }}
+      - name: Smoke test
+        shell: bash
+        run: |
+          BIN="dist/anygamevoice"
+          if [ "${{ runner.os }}" = "Windows" ]; then BIN="$BIN.exe"; fi
+          "$BIN" | grep -q "AnyGameVoice"
+          "$BIN" config --delete
+      - name: Upload bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: anygamevoice-${{ matrix.triple }}
+          path: |
+            dist/anygamevoice*
+            !dist/**/*.log
+          retention-days: 30
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: bundle
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: bundles/
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: bundles/**/*
+          generate_release_notes: true

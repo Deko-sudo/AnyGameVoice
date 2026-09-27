@@ -14,6 +14,15 @@ use std::time::Duration;
 
 const BACKEND_PORT: u16 = 8000;
 
+/// Triple-specific sidecar names produced by scripts/build_bundle.py.
+const SIDECAR_NAMES: &[&str] = &[
+    "anygamevoice-x86_64-pc-windows-msvc.exe",
+    "anygamevoice-x86_64-unknown-linux-gnu",
+    "anygamevoice-aarch64-unknown-linux-gnu",
+    "anygamevoice-x86_64-apple-darwin",
+    "anygamevoice-aarch64-apple-darwin",
+];
+
 fn backend_up() -> bool {
     TcpStream::connect_timeout(
         &format!("127.0.0.1:{BACKEND_PORT}").parse().unwrap(),
@@ -22,10 +31,43 @@ fn backend_up() -> bool {
     .is_ok()
 }
 
+/// Native single-file bundle next to the app binary (Tauri externalBin).
+fn sidecar_path() -> Option<std::path::PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let dir = exe.parent()?;
+    // Bundled layout: <dir>/binaries/<name>-<triple>[.exe], dev: <dir>/<name>.
+    for sub in ["binaries", "."] {
+        for name in SIDECAR_NAMES {
+            let p = dir.join(sub).join(name);
+            if p.is_file() {
+                return Some(p);
+            }
+        }
+    }
+    None
+}
+
 fn spawn_backend() -> Option<Child> {
     if backend_up() {
         return None; // `tauri dev` already started it via beforeDevCommand
     }
+    // 1) Native bundle sidecar (no Python needed).
+    if let Some(bin) = sidecar_path() {
+        if let Ok(child) = Command::new(&bin)
+            .arg("ui")
+            .arg(BACKEND_PORT.to_string())
+            .spawn()
+        {
+            for _ in 0..50 {
+                if backend_up() {
+                    return Some(child);
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            return Some(child);
+        }
+    }
+    // 2) Dev fallback: system Python running the repo backend.
     // Repo root = two levels above the running binary in dev
     // (src-tauri/target/debug), one level in a bundled install.
     let candidates = [

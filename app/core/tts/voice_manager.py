@@ -8,9 +8,10 @@ import os
 from pathlib import Path
 
 from app.models.voice import Voice
+from app.utils.paths import preset_dir, user_voices_dir
 
-PRESET_DIR = Path(__file__).resolve().parents[4] / "voices" / "presets"
-USER_DIR = Path(__file__).resolve().parents[4] / "voices" / "user"
+PRESET_DIR = preset_dir()
+USER_DIR = user_voices_dir()
 
 VALID_SUFFIXES = {".onnx", ".wav", ".pt", ".pth", ".ckpt"}
 

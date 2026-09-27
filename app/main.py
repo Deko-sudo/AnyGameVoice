@@ -163,23 +163,33 @@ def cmd_ui(port: int = 8000):
     run(port=port)
 
 
+def _prog() -> str:
+    """CLI invocation prefix (dev vs frozen bundle)."""
+    if getattr(sys, "frozen", False):
+        import os as _os
+
+        return _os.path.basename(sys.executable)
+    return "python app/main.py"
+
+
 def main(argv=None):
     """Main entry point for the application."""
     argv = sys.argv[1:] if argv is None else argv
+    prog = _prog()
     if not argv:
         _banner()
         print()
-        print("  Status: Phase 1 - Core Engine")
+        print("  Status: Ready — CLI + local web UI")
         print("  License: Apache 2.0")
         print()
         print("  Usage:")
-        print("    python app/main.py scan <game_folder>")
-        print("    python app/main.py extract <game_folder>")
-        print("    python app/main.py ui [port]")
-        print("    python app/main.py config [--show|--delete|--save-scan]")
-        print("    python app/main.py mod <game_folder> --out <dir> [--voice model.onnx] [--engine piper] [--workers 2]")
-        print("    python app/main.py unpack <game_or_container> --out <dir> [--engine auto|unity|unreal] [--unrealpak path] [--aes-key key]")
-        print("    python app/main.py translate \"Hello\" --to ru [--from en] [--provider ollama]")
+        print(f"    {prog} scan <game_folder>")
+        print(f"    {prog} extract <game_folder>")
+        print(f"    {prog} mod <game_folder> --out <dir> [--voice model.onnx] [--engine piper] [--emotion neutral] [--translate-to ru] [--workers 2]")
+        print(f"    {prog} unpack <game_or_container> --out <dir> [--engine auto|unity|unreal]")
+        print(f"    {prog} translate \"text\" --to ru [--provider ollama]")
+        print(f"    {prog} ui [port]")
+        print(f"    {prog} config [--show|--delete|--save-scan]")
         print()
         print("=" * 50)
         return

@@ -17,7 +17,9 @@ import itertools
 import threading
 from pathlib import Path
 
-INDEX = Path(__file__).resolve().parent.parent / "ui" / "index.html"
+from app.utils.paths import resource_path
+
+INDEX = resource_path("ui", "index.html")
 
 __all__ = ["create_app", "start_mod_job", "mod_job_status"]
 

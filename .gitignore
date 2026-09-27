@@ -63,4 +63,8 @@ settings.json
 # Rust / Tauri
 src-tauri/target/
 src-tauri/WixTools/
+src-tauri/binaries/
 node_modules/
+
+# PyInstaller (dist/ and build/ already ignored above)
+*.spec

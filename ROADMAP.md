@@ -19,10 +19,11 @@
 - [x] Emotions (`[tag]` -> piper prosody / bark markers)
 - [x] Translation (provider router, `translate` CLI, `mod --translate-to`)
 - [x] Tauri desktop shell scaffold + `/api/mod` background jobs
+- [x] Native single-file bundle (PyInstaller, Tauri sidecar wiring)
 
 ## Next
 
-- [ ] Native single-file bundle (PyInstaller sidecar for Tauri)
 - [ ] Unity AssetBundle / Unreal .pak *text* extraction (needs unpackers)
 - [ ] Lip-sync timing export
 - [ ] Auto-updater + signed releases
+- [ ] v0.1.0 tag + release bundles (Windows/Linux/macOS via CI)

@@ -32,6 +32,9 @@ All notable changes to this project will be documented in this file.
 - Translation via provider router (`translate` CLI, `mod --translate-to`)
 - Tauri shell scaffold (`src-tauri/`, backend spawn/kill, `docs/tauri.md`),
   `/api/mod` background jobs + web UI panel
+- Native bundle: `scripts/build_bundle.py` (onefile ~16MB, verified CLI +
+  API end-to-end), Tauri sidecar mode, `docs/bundle.md`, CI `build.yml`
+  (Windows/Linux/macOS artifacts + `v*` releases)
 
 ### Fixed
 - `.gitignore` `models/` shadowed `app/models/` (narrowed to `/models/`)
@@ -39,14 +42,5 @@ All notable changes to this project will be documented in this file.
 - Detector tie bug: bare `child.glob()` generators are always truthy
   (any subfolder gave +1 to every engine)
 - `ui_server.INDEX` pointed at `app/index.html` instead of `ui/index.html`
-
-### Fixed
-- `.gitignore` `models/` shadowed `app/models/` (narrowed to `/models/`)
-- `python app/main.py` missing project root on `sys.path`
-- README with project description
-- Apache 2.0 license
-- Privacy policy
-- Disclaimer
-- Contributing guidelines
-- Issue templates
-- Basic Python project configuration
+- Voice preset dir pointed outside the repo (`parents[4]`); bundle-aware
+  `app/utils/paths.py` now, user voices in `~/.anygamevoice/voices`

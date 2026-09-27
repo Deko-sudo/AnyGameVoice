@@ -25,13 +25,17 @@ cargo tauri dev
 ## Build
 
 ```bash
+# 1) Python backend as native sidecar (no Python needed on target):
+python scripts/build_bundle.py --tauri-sidecar
+# 2) Shell + installer:
 cargo tauri build
 ```
 
-Output: `src-tauri/target/release/bundle/`. The bundle currently
-expects a system Python with the repo's requirements installed
-(companion-backend model). Single-file distribution via a PyInstaller
-sidecar is the documented next step, not yet implemented.
+Output: `src-tauri/target/release/bundle/`. The shell first tries
+`binaries/anygamevoice-<triple>[.exe]` next to the app binary
+(`externalBin` in `tauri.conf.json`), then falls back to
+`python app/main.py ui` for dev. Full flow documented in
+[bundle.md](bundle.md).
 
 ## Notes
 
