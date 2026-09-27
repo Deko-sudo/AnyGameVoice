@@ -101,6 +101,44 @@ def cmd_mod(folder: str, out: str, voice: str = "", engine: str = "piper", worke
     print(f"Subtitles: {srt_path}")
 
 
+def cmd_unpack(target: str, out: str, engine: str = "auto", unrealpak: str = "", aes_key: str = ""):
+    """Unpack Unity/Unreal containers (carve + optional native tools)."""
+    import json as _json
+    import os as _os
+
+    from app.core.game_detector.detector import detect_engine
+
+    eng = engine
+    if eng == "auto":
+        base = target if _os.path.isdir(target) else _os.path.dirname(target) or "."
+        eng = detect_engine(base)
+        if _os.path.isfile(target):
+            low = target.lower()
+            if low.endswith((".assets", ".bundle", ".resource")):
+                eng = "unity"
+            elif low.endswith((".pak", ".utoc", ".ucas", ".ubulk")):
+                eng = "unreal"
+    if eng == "unity":
+        from app.core.game_detector.engines.unity import extract_unity_audio
+
+        res = extract_unity_audio(target if _os.path.isdir(target) else _os.path.dirname(target), out)
+    elif eng == "unreal":
+        from app.core.game_detector.engines.unreal import extract_unreal_audio, inspect_pak
+
+        base = target if _os.path.isdir(target) else target
+        if _os.path.isfile(target) and target.lower().endswith(".pak"):
+            print(_json.dumps(inspect_pak(target), indent=2))
+        res = extract_unreal_audio(base if _os.path.isdir(base) else _os.path.dirname(base), out,
+                                   unrealpak=unrealpak, aes_key=aes_key)
+    else:
+        print(f"unpack: unsupported engine '{eng}' (need unity/unreal game or container).")
+        sys.exit(2)
+    print(_json.dumps({k: (len(v) if isinstance(v, list) else v) for k, v in res.items()}, indent=2))
+    for kind in ("unitypy", "unpacked", "carved"):
+        for p in res.get(kind, [])[:20]:
+            print(f"  [{kind}] {p}")
+
+
 def cmd_ui(port: int = 8000):
     """Launch the local web UI."""
     from app.ui_server import run
@@ -124,6 +162,7 @@ def main(argv=None):
         print("    python app/main.py ui [port]")
         print("    python app/main.py config [--show|--delete|--save-scan]")
         print("    python app/main.py mod <game_folder> --out <dir> [--voice model.onnx] [--engine piper] [--workers 2]")
+        print("    python app/main.py unpack <game_or_container> --out <dir> [--engine auto|unity|unreal] [--unrealpak path] [--aes-key key]")
         print()
         print("=" * 50)
         return
@@ -147,8 +186,19 @@ def main(argv=None):
         p.add_argument("--workers", type=int, default=2)
         a = p.parse_args(rest)
         cmd_mod(a.folder, a.out, voice=a.voice, engine=a.engine, workers=a.workers)
+    elif cmd == "unpack" and rest:
+        import argparse
+
+        p = argparse.ArgumentParser(prog="unpack")
+        p.add_argument("target")
+        p.add_argument("--out", required=True)
+        p.add_argument("--engine", default="auto")
+        p.add_argument("--unrealpak", default="")
+        p.add_argument("--aes-key", default="")
+        a = p.parse_args(rest)
+        cmd_unpack(a.target, a.out, engine=a.engine, unrealpak=a.unrealpak, aes_key=a.aes_key)
     else:
-        print(f"Unknown command: {cmd}. Try: scan | extract | ui | config | mod")
+        print(f"Unknown command: {cmd}. Try: scan | extract | ui | config | mod | unpack")
         sys.exit(2)
 
 
