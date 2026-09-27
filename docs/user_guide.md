@@ -1,3 +1,39 @@
 # User Guide
 
-Drop a game folder, choose voices, click Generate. (Full guide coming in Phase 2.)
+## Workflow
+
+1. **Scan** — `python app/main.py scan <folder>` (or the web UI).
+   Check `engine`, `script_files`, `audio_files`. If the engine is
+   `unknown`, text extraction is skipped but you can still use the
+   replacer on known audio paths.
+2. **Privacy** — the first hardware scan is opt-in. Stored data lives in
+   `~/.anygamevoice/config.json`:
+   `python app/main.py config --show` to view, `--delete` to wipe,
+   `--save-scan` to refresh.
+3. **Voices** — drop `.onnx`/`.wav` presets into `voices/presets/`,
+   your samples into `voices/user/` (or `VoiceManager.add_voice()`).
+   List via web UI or `VoiceManager().list_voices()`.
+4. **Batch** — `python app/main.py mod <folder> --out ./out --voice <model>`:
+   parallel TTS through the task queue, one wav per line, plus
+   `dialogue.srt` for timing review.
+5. **Replace** — `replace_audio(game_file, generated_wav)` always writes
+   a `<name>.<timestamp>.bak` first; `restore_file(backup)` rolls back.
+6. **Providers (optional)** — copy `.env.example` to `.env`, add keys for
+   OpenAI/Anthropic/Groq/Mistral/DeepSeek/Tavily/Brave. Ollama needs no key
+   (`OLLAMA_URL`, default `http://localhost:11434`). Keys never leave your
+   machine except to the provider's own API.
+7. **Agent (optional)** — `AIAgent(provider="ollama").research("piper russian voices")`
+   searches the web, fetches pages and summarizes with citations.
+
+## Engine notes
+
+- **Ren'Py**: `speaker "text"` + narration; `{tags}` stripped; comments skipped.
+- **RPG Maker MV/MZ**: event codes 101 (speaker) / 401 (text) / 102 (choices).
+- **Godot**: Dialogue Manager `*.dialogue` (`Name: text`); `- choices` skipped.
+- **Unity/Unreal**: compiled bundles (`.assets`, `.pak`, `.uasset`) are inventoried
+  for the replacer; text extraction needs unpacked assets (backlog).
+
+## Safety
+
+- Game files are only written by `replace_audio`, always with backup.
+- `voices/user/*` and `.env` are git-ignored; never commit keys or samples.

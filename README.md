@@ -46,11 +46,18 @@ python app/main.py
 
 ### Usage
 
-1. Launch the application
-2. Drag & drop your game folder
+```bash
+python app/main.py scan <game_folder>     # hardware + engine report
+python app/main.py extract <game_folder>  # dialogue lines
+python app/main.py mod <game_folder> --out ./out --voice models/en_US-lessac-medium.onnx
+python app/main.py ui 8000                # local web UI
+```
+
+1. Launch the application (CLI or web UI)
+2. Scan your game folder (engine auto-detected)
 3. Choose voices for characters
-4. Click "Generate"
-5. Enjoy your modded game!
+4. Batch-generate wavs + subtitles
+5. Install into the game with automatic backups
 
 ## 🖥️ Hardware Requirements
 
