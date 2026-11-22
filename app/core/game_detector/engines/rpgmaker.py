@@ -12,7 +12,7 @@ import json
 import os
 from pathlib import Path
 
-from app.core.extractor.models import ExtractedLine
+from app.models.line import Line
 
 __all__ = ["extract_rpgmaker_folder", "extract_rpgmaker_file"]
 
@@ -36,9 +36,9 @@ def _iter_event_lists(data) -> list:
     return lists
 
 
-def extract_rpgmaker_file(path: str) -> list[ExtractedLine]:
+def extract_rpgmaker_file(path: str) -> list[Line]:
     """Extract dialogue from a single RPG Maker JSON file."""
-    out: list[ExtractedLine] = []
+    out: list[Line] = []
     try:
         with open(path, encoding="utf-8", errors="replace") as fh:
             data = json.load(fh)
@@ -59,9 +59,10 @@ def extract_rpgmaker_file(path: str) -> list[ExtractedLine]:
                 text = " ".join(str(p) for p in params if isinstance(p, str)).strip()
                 if text:
                     out.append(
-                        ExtractedLine(
+                        Line(
+                            engine_id="rpgmaker",
                             speaker=speaker or "narrator",
-                            text=text,
+                            source_text=text,
                             source_file=os.path.basename(path),
                             line_no=0,
                         )
@@ -69,7 +70,7 @@ def extract_rpgmaker_file(path: str) -> list[ExtractedLine]:
     return out
 
 
-def extract_rpgmaker_folder(game_path: str) -> list[ExtractedLine]:
+def extract_rpgmaker_folder(game_path: str) -> list[Line]:
     """Extract dialogue from data/*.json (Map files + CommonEvents)."""
     root = Path(game_path)
     data_dir = root / "data" if (root / "data").is_dir() else root
@@ -79,7 +80,7 @@ def extract_rpgmaker_folder(game_path: str) -> list[ExtractedLine]:
         files.append(common)
     if not files:  # nested layout (e.g. www/ folder)
         files = sorted(root.rglob("Map001.json"))
-    lines: list[ExtractedLine] = []
+    lines: list[Line] = []
     for fp in files:
         if fp.is_file():
             lines.extend(extract_rpgmaker_file(str(fp)))

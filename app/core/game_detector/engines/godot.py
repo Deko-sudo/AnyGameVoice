@@ -13,16 +13,16 @@ Also lists audio assets for the replacer.
 import os
 from pathlib import Path
 
-from app.core.extractor.models import ExtractedLine
+from app.models.line import Line
 
 __all__ = ["extract_godot_folder", "extract_godot_file", "list_audio_assets"]
 
 AUDIO_SUFFIXES = {".wav", ".ogg", ".mp3"}
 
 
-def extract_godot_file(path: str) -> list[ExtractedLine]:
+def extract_godot_file(path: str) -> list[Line]:
     """Extract dialogue from a single .dialogue file."""
-    out: list[ExtractedLine] = []
+    out: list[Line] = []
     try:
         with open(path, encoding="utf-8", errors="replace") as fh:
             for no, raw in enumerate(fh, 1):
@@ -36,8 +36,9 @@ def extract_godot_file(path: str) -> list[ExtractedLine]:
                     speaker, text = speaker.strip(), text.strip()
                     if speaker and text and " " not in speaker and len(speaker) <= 32:
                         out.append(
-                            ExtractedLine(
-                                speaker=speaker, text=text,
+                            Line(
+                                engine_id="godot",
+                                speaker=speaker, source_text=text,
                                 source_file=os.path.basename(path), line_no=no,
                             )
                         )
@@ -45,8 +46,9 @@ def extract_godot_file(path: str) -> list[ExtractedLine]:
                 # bare narration line
                 if len(line) > 1:
                     out.append(
-                        ExtractedLine(
-                            speaker="narrator", text=line,
+                        Line(
+                            engine_id="godot",
+                            speaker="narrator", source_text=line,
                             source_file=os.path.basename(path), line_no=no,
                         )
                     )
@@ -55,9 +57,9 @@ def extract_godot_file(path: str) -> list[ExtractedLine]:
     return out
 
 
-def extract_godot_folder(game_path: str) -> list[ExtractedLine]:
+def extract_godot_folder(game_path: str) -> list[Line]:
     """Extract dialogue from all .dialogue files under game_path."""
-    lines: list[ExtractedLine] = []
+    lines: list[Line] = []
     for fp in sorted(Path(game_path).rglob("*.dialogue")):
         if fp.is_file():
             lines.extend(extract_godot_file(str(fp)))

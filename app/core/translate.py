@@ -5,9 +5,14 @@ Game dialogue is translated line by line to keep speaker timing;
 tags like [happy] are preserved by translating only the clean text.
 """
 
-from app.models.dialogue import Dialogue
+from dataclasses import replace
 
-__all__ = ["translate_text", "translate_lines", "SUPPORTED_HINT"]
+from app.core.extractor.models import ExtractedLine
+from app.core.tts.emotions import parse_emotion
+from app.models.dialogue import Dialogue
+from app.models.line import Line
+
+__all__ = ["translate_text", "translate_line", "translate_lines", "SUPPORTED_HINT"]
 
 
 def translate_text(text: str, target: str = "en", source: str = "auto",
@@ -26,24 +31,37 @@ def translate_text(text: str, target: str = "en", source: str = "auto",
     return out.strip().strip("\"'")
 
 
-def translate_lines(lines: list, target: str, source: str = "auto",
-                    provider: str = "ollama", api_key: str = "", model: str = "") -> list:
-    """Translate dialogue texts, preserving speakers and metadata."""
-    from app.core.tts.emotions import parse_emotion
+def translate_line(line: Line, target: str, source: str = "auto",
+                   provider: str = "ollama", api_key: str = "", model: str = "") -> Line:
+    if line.manual_override and line.target_lang == target and line.translated_text:
+        return line
+    source_lang = line.source_lang if source == "auto" else source
+    emotion, clean = parse_emotion(line.source_text)
+    translated = translate_text(clean, target, source_lang, provider, api_key, model)
+    if not translated.strip():
+        raise ValueError("Translation is empty")
+    tag = "" if emotion == "neutral" else f"[{emotion}] "
+    return replace(
+        line, source_lang=source_lang, target_lang=target,
+        translated_text=tag + translated, tts_text=translated,
+        emotion=line.emotion if emotion == "neutral" else emotion,
+        metadata={**line.metadata, "translated_to": target},
+    )
 
-    out: list = []
-    for ln in lines:
-        emotion, clean = parse_emotion(ln.text)
-        tag = "" if emotion == "neutral" else f"[{emotion}] "
-        trans = translate_text(clean, target, source, provider, api_key, model)
-        speaker = getattr(ln, "speaker", "")
-        if isinstance(ln, Dialogue):
-            out.append(Dialogue(speaker=speaker, text=tag + trans,
-                                source_file=ln.source_file, line_no=ln.line_no,
-                                engine=ln.engine, metadata={**ln.metadata, "translated_to": target}))
-        else:
-            out.append({"speaker": speaker, "text": tag + trans})
-    return out
+
+def translate_lines(lines: list[Line | Dialogue | ExtractedLine], target: str, source: str = "auto",
+                    provider: str = "ollama", api_key: str = "", model: str = "") -> list[Line]:
+    """Accept earlier extractor/CLI models at the boundary; always return Lines."""
+    result = []
+    for line in lines:
+        if not isinstance(line, Line):
+            line = Line(
+                engine_id=getattr(line, "engine", ""), source_file=line.source_file,
+                line_no=line.line_no, speaker=line.speaker, source_text=line.text,
+                metadata=line.metadata,
+            )
+        result.append(translate_line(line, target, source, provider, api_key, model))
+    return result
 
 
 SUPPORTED_HINT = "Any target language the provider supports (e.g. en, ru, ja, de, fr)."

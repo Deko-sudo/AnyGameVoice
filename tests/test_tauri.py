@@ -33,6 +33,7 @@ def test_mod_job_lifecycle(tmp_path):
         calls.append((path, out, kwargs))
         with open(os.path.join(tmp_path, "ok.txt"), "w") as fh:
             fh.write("done")
+        return {"status": "done", "total": 1, "succeeded": 1, "failed": 0, "error": "", "lines": []}
 
     import app.main as mainmod
 

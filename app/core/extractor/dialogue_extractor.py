@@ -8,7 +8,7 @@ Unity/Unreal: compiled assets, text extraction not supported yet
 
 import os
 
-from app.core.extractor.models import ExtractedLine
+from app.models.line import Line
 
 __all__ = ["extract_dialogue", "supported_engines"]
 
@@ -20,8 +20,8 @@ def supported_engines() -> tuple:
     return SUPPORTED
 
 
-def extract_dialogue(game_path: str) -> list:
-    """Extract dialogue lines (list of ExtractedLine). Empty if unsupported."""
+def extract_dialogue(game_path: str) -> list[Line]:
+    """Extract dialogue lines (list of Line). Empty if unsupported."""
     if not game_path or not os.path.isdir(game_path):
         return []
     try:

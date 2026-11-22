@@ -5,6 +5,8 @@ Only piper works out of the box; xtts/bark/silero need optional
 packages and raise a clear RuntimeError otherwise.
 """
 
+from app.models.line import Line
+
 from .engines.bark import BarkEngine
 from .engines.piper import PiperEngine
 from .engines.silero import SileroEngine
@@ -35,8 +37,13 @@ def get_engine(name: str, voice: str = ""):
     return cls()
 
 
-def generate_voice(text: str, voice: str = "default", engine: str = "piper", emotion: str = "neutral") -> bytes:
+def generate_voice(text: str | Line, voice: str = "default", engine: str = "piper", emotion: str = "neutral") -> bytes:
     """Generate voice audio bytes for text (emotion tag or param)."""
+    if isinstance(text, Line):
+        voice = text.voice_id or voice
+        if text.emotion != "neutral":
+            emotion = text.emotion
+        text = text.tts_text or text.text
     if not text or not text.strip():
         raise ValueError("text must not be empty")
     if engine == "piper" and (not voice or voice == "default"):
@@ -51,9 +58,11 @@ def generate_voice(text: str, voice: str = "default", engine: str = "piper", emo
         return eng.synthesize(text, voice)
 
 
-def generate_voice_to_file(text: str, out_path: str, voice: str = "", engine: str = "piper", emotion: str = "neutral") -> str:
+def generate_voice_to_file(text: str | Line, out_path: str, voice: str = "", engine: str = "piper", emotion: str = "neutral") -> str:
     """Generate audio and write to out_path. Returns out_path."""
     data = generate_voice(text, voice=voice, engine=engine, emotion=emotion)
+    if not data:
+        raise ValueError("TTS returned no audio")
     with open(out_path, "wb") as fh:
         fh.write(data)
     return out_path

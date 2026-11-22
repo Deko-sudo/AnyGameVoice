@@ -64,47 +64,79 @@ def cmd_config(action: str):
 
 
 def cmd_mod(folder: str, out: str, voice: str = "", engine: str = "piper", workers: int = 2, emotion: str = "neutral",
-            translate_to: str = "", provider: str = "ollama"):
-    """Batch pipeline: extract -> synthesize via queue -> wavs + SRT sidecar."""
-    import os
-
+            translate_to: str = "", provider: str = "ollama") -> dict:
+    """Generate audio and return the same per-line report exposed by the UI."""
     from app.core.extractor.dialogue_extractor import extract_dialogue
-    from app.core.queue.priority import Priority
-    from app.core.queue.task_queue import TaskQueue
+    from app.core.queue.task_queue import TaskQueue, TaskStatus
+    from app.core.translate import translate_line
     from app.core.tts.generator import generate_voice_to_file
     from app.utils.audio_utils import to_srt
 
     lines = extract_dialogue(folder)
-    if not lines:
-        print(f"No dialogue extracted from {folder}.")
-        return
-    if translate_to:
-        from app.core.translate import translate_lines
-
-        lines = translate_lines(lines, translate_to, provider=provider)
-        print(f"Translated {len(lines)} lines -> {translate_to} ({provider}).")
-    os.makedirs(out, exist_ok=True)
+    output = Path(out)
+    output.mkdir(parents=True, exist_ok=True)
+    results = []
     q = TaskQueue(workers=workers)
     jobs = []
-    for i, ln in enumerate(lines):
-        fname = f"{i:04d}_{(ln.speaker or 'narrator')}.wav"
-        dest = os.path.join(out, fname)
-        tid = q.submit(
-            generate_voice_to_file, ln.text, dest, voice=voice, engine=engine, emotion=emotion,
-            priority=Priority.NORMAL, name=fname,
-        )
-        jobs.append((tid, dest, ln))
-    snaps = q.wait_all(timeout=600)
-    q.shutdown()
-    ok = sum(1 for s in snaps if s["status"] == "done")
-    print(f"Generated {ok}/{len(snaps)} lines -> {out}")
-    for s in snaps:
-        if s["status"] == "failed":
-            print(f"FAILED {s['name']}: {(s['error'] or '').splitlines()[0]}")
-    srt_path = os.path.join(out, "dialogue.srt")
-    with open(srt_path, "w", encoding="utf-8") as fh:
-        fh.write(to_srt(lines))
-    print(f"Subtitles: {srt_path}")
+    try:
+        for i, line in enumerate(lines):
+            result = {
+                "index": i, "source_file": line.source_file, "line_no": line.line_no,
+                "speaker": line.speaker, "status": "failed", "skipped_reason": None,
+            }
+            results.append(result)
+            if translate_to:
+                try:
+                    line = translate_line(line, translate_to, provider=provider)
+                except Exception as exc:
+                    result["skipped_reason"] = f"Translation failed: {str(exc) or type(exc).__name__}"
+                    continue
+            line.voice_id = line.voice_id or voice
+            if line.emotion == "neutral":
+                line.emotion = emotion
+            name = f"{i:04d}_{line.speaker or 'narrator'}.wav"
+            tid = q.submit(generate_voice_to_file, line, str(output / name),
+                           engine=engine, name=name)
+            jobs.append((tid, line, result))
+        q.wait_all(timeout=600)
+    finally:
+        # After the deadline, stop taking new lines. A running writer must
+        # finish before its outcome can be included in the terminal report.
+        q.shutdown(wait=True)
+
+    completed = []
+    for tid, line, result in jobs:
+        task = q.status(tid)
+        if task["status"] == TaskStatus.DONE:
+            result.update(status="succeeded", wav=task["name"])
+            completed.append(line)
+        elif task["status"] == TaskStatus.FAILED:
+            result["skipped_reason"] = task["error"].splitlines()[0] or "TTS failed"
+        else:
+            result["skipped_reason"] = "Batch timed out before synthesis started"
+
+    total, succeeded = len(lines), len(completed)
+    failed = total - succeeded
+    if not succeeded:
+        status = "failed"
+    elif failed:
+        status = "partial"
+    else:
+        status = "done"
+    error = f"{failed} of {total} lines failed" if failed else ""
+    if not total:
+        error = "No dialogue extracted"
+    report = {
+        "status": status, "total": total, "succeeded": succeeded, "failed": failed,
+        "error": error, "lines": results,
+    }
+    (output / "dialogue.srt").write_text(to_srt(completed), encoding="utf-8")
+    (output / "report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"Generated {succeeded}/{total} lines -> {out} ({status})")
+    for result in results:
+        if result["skipped_reason"]:
+            print(f"SKIPPED {result['source_file']}:{result['line_no']}: {result['skipped_reason']}")
+    return report
 
 
 def cmd_unpack(target: str, out: str, engine: str = "auto", unrealpak: str = "", aes_key: str = ""):
@@ -215,8 +247,10 @@ def main(argv=None):
         p.add_argument("--provider", default="ollama")
         p.add_argument("--workers", type=int, default=2)
         a = p.parse_args(rest)
-        cmd_mod(a.folder, a.out, voice=a.voice, engine=a.engine, workers=a.workers, emotion=a.emotion,
-                translate_to=a.translate_to, provider=a.provider)
+        report = cmd_mod(a.folder, a.out, voice=a.voice, engine=a.engine, workers=a.workers,
+                         emotion=a.emotion, translate_to=a.translate_to, provider=a.provider)
+        if report["status"] != "done":
+            raise SystemExit(1)
     elif cmd == "unpack" and rest:
         import argparse
 

@@ -37,7 +37,7 @@ def start_mod_job(params: dict) -> int:
         _JOBS[job_id] = {"id": job_id, "status": "running", "params": params, "error": ""}
     def _run():
         try:
-            cmd_mod(
+            report = cmd_mod(
                 params.get("path", ""),
                 params.get("out", "./out"),
                 voice=params.get("voice", ""),
@@ -52,7 +52,7 @@ def start_mod_job(params: dict) -> int:
                 _JOBS[job_id].update(status="failed", error=str(exc)[:500])
         else:
             with _JOBS_LOCK:
-                _JOBS[job_id]["status"] = "done"
+                _JOBS[job_id].update(report)
 
     threading.Thread(target=_run, daemon=True, name=f"agv-mod-{job_id}").start()
     return job_id

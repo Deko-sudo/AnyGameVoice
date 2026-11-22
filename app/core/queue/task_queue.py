@@ -110,6 +110,9 @@ class TaskQueue:
         with self._lock:
             return [dict(self._tasks[k]) for k in sorted(self._tasks)]
 
-    def shutdown(self) -> None:
-        """Stop workers (daemon threads also die with the process)."""
+    def shutdown(self, wait: bool = False) -> None:
+        """Stop accepting queued work and optionally wait for active writers."""
         self._stop.set()
+        if wait:
+            for thread in self._threads:
+                thread.join()

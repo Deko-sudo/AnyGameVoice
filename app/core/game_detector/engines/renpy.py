@@ -11,7 +11,7 @@ import os
 import re
 from pathlib import Path
 
-from app.core.extractor.models import ExtractedLine
+from app.models.line import Line
 
 __all__ = ["extract_renpy_file", "extract_renpy_folder"]
 
@@ -33,9 +33,9 @@ def _clean(text: str) -> str:
     return text.strip()
 
 
-def extract_renpy_file(path: str) -> list[ExtractedLine]:
+def extract_renpy_file(path: str) -> list[Line]:
     """Extract dialogue lines from a single .rpy file."""
-    out: list[ExtractedLine] = []
+    out: list[Line] = []
     try:
         with open(path, encoding="utf-8", errors="replace") as fh:
             for no, raw in enumerate(fh, 1):
@@ -54,9 +54,10 @@ def extract_renpy_file(path: str) -> list[ExtractedLine]:
                 if speaker and " " in speaker:
                     continue
                 out.append(
-                    ExtractedLine(
+                    Line(
+                        engine_id="renpy",
                         speaker=speaker or "narrator",
-                        text=text,
+                        source_text=text,
                         source_file=os.path.basename(path),
                         line_no=no,
                     )
@@ -66,11 +67,11 @@ def extract_renpy_file(path: str) -> list[ExtractedLine]:
     return out
 
 
-def extract_renpy_folder(game_path: str) -> list[ExtractedLine]:
+def extract_renpy_folder(game_path: str) -> list[Line]:
     """Extract dialogue from all .rpy files under game/ (or root)."""
     root = Path(game_path)
     candidates = sorted((root / "game").glob("*.rpy")) or sorted(root.rglob("*.rpy"))
-    lines: list[ExtractedLine] = []
+    lines: list[Line] = []
     for fp in candidates:
         if fp.is_file():
             lines.extend(extract_renpy_file(str(fp)))
