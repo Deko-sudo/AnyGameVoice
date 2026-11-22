@@ -85,7 +85,21 @@ async function doMod() {
 }
 async function doJob() {
   if (!lastJob) return;
-  document.getElementById('job').textContent = JSON.stringify(await (await fetch('/api/mod/' + lastJob)).json(), null, 2);
+  const id = lastJob;
+  const job = await (await fetch('/api/mod/' + id)).json();
+  if (lastJob !== id) return;
+  const labels = {running: 'Running', done: 'Completed', partial: 'Partially completed', failed: 'Failed'};
+  const rows = [`Job ${id} — ${labels[job.status] || 'Status unavailable'}`];
+  if (job.total != null) {
+    rows.push(`Succeeded: ${job.succeeded}/${job.total}`, `Failed: ${job.failed}/${job.total}`);
+  }
+  if (job.error) rows.push(job.error);
+  for (const line of job.lines || []) {
+    if (line.status === 'failed') {
+      rows.push(`${line.source_file}:${line.line_no} (${line.speaker}) — ${line.skipped_reason}`);
+    }
+  }
+  document.getElementById('job').textContent = rows.join('\n');
 }
 setInterval(() => { if (lastJob) doJob(); }, 5000);
 </script>

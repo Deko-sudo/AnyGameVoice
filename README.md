@@ -67,6 +67,39 @@ python app/main.py ui 8000                # local web UI
 4. Batch-generate wavs + subtitles
 5. Install into the game with automatic backups
 
+### Job status
+
+The web UI shows the result of each batch with its succeeded/total and failed/total counts.
+
+| Status | Meaning |
+|--------|---------|
+| `done` | Every extracted line produced a WAV. |
+| `partial` | At least one line produced a WAV and at least one failed. Successful WAVs and their subtitles are available. |
+| `failed` | No line succeeded, no dialogue was found, or the job ended with a batch-level error. |
+
+### Batch report
+
+Each completed batch writes `report.json` in the output directory chosen with
+`--out` or the web UI, alongside the WAVs and `dialogue.srt`. The UI reads the
+same result from `GET /api/mod/{job_id}`.
+
+| Field | Contents |
+|-------|----------|
+| `status`, `error` | Final job status and a summary of any failures. |
+| `total`, `succeeded`, `failed` | Extracted lines, WAVs produced, and lines that failed. |
+| `lines` | One entry per extracted line, in source order, with a zero-based `index`, `source_file`, `line_no`, `speaker`, and per-line `status`. |
+| `lines[].wav` | Output filename for a `succeeded` line. |
+| `lines[].skipped_reason` | Failure reason for a `failed` line, or `null` on success. |
+
+Once all lines have been submitted, workers share a 60-second deadline to
+finish the queue. Any unfinished line counts as failed with the reason
+`TTS timed out`. Only successful lines appear in the subtitles.
+
+### Translation and voice limitations
+
+- To preserve a manual translation, set `manual_override`, provide `translated_text`, and set the line's `target_lang` to the requested language. An empty `target_lang` causes the batch to translate the line again when a target is requested.
+- A character's assigned `line.voice_id` takes precedence over CLI `--voice`. The CLI voice applies to lines without an assigned voice.
+
 ## 🖥️ Hardware Requirements
 
 | Component | Minimum | Recommended | Ideal |

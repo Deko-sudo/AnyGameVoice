@@ -23,6 +23,7 @@ class TaskStatus:
     RUNNING = "running"
     DONE = "done"
     FAILED = "failed"
+    TIMEOUT = "timeout"
 
 
 class TaskQueue:
@@ -33,7 +34,8 @@ class TaskQueue:
         self._counter = itertools.count()
         self._tasks: dict = {}
         self._lock = threading.Lock()
-        self._stop = threading.Event()
+        self._closed = False
+        self._deadline: float | None = None
         self._threads = [
             threading.Thread(target=self._worker, daemon=True, name=f"agv-worker-{i}")
             for i in range(max(1, workers))
@@ -43,8 +45,10 @@ class TaskQueue:
 
     def submit(self, func, *args, priority: Priority = Priority.NORMAL, name: str = "", **kwargs) -> int:
         """Queue a callable. Returns task id."""
-        task_id = next(self._counter)
         with self._lock:
+            if self._closed:
+                raise RuntimeError("Task queue has been shut down")
+            task_id = next(self._counter)
             self._tasks[task_id] = {
                 "id": task_id,
                 "name": name or getattr(func, "__name__", str(task_id)),
@@ -54,34 +58,36 @@ class TaskQueue:
                 "error": None,
                 "enqueued_at": time.time(),
             }
-        # PriorityQueue is a min-heap: negate priority so HIGH runs first
-        self._pq.put((-int(priority), task_id, func, args, kwargs))
+            # PriorityQueue is a min-heap: negate priority so HIGH runs first.
+            self._pq.put((-int(priority), task_id, func, args, kwargs))
         return task_id
 
     def _worker(self) -> None:
-        while not self._stop.is_set():
-            try:
-                _neg, task_id, func, args, kwargs = self._pq.get(timeout=0.1)
-            except queue.Empty:
-                continue
+        while True:
+            _neg, task_id, func, args, kwargs = self._pq.get()
+            if task_id == -1:
+                self._pq.task_done()
+                return
             with self._lock:
-                task = self._tasks.get(task_id)
-                if task is None:
+                task = self._tasks[task_id]
+                if self._deadline is not None and time.monotonic() >= self._deadline:
+                    task["status"] = TaskStatus.TIMEOUT
                     self._pq.task_done()
                     continue
                 task["status"] = TaskStatus.RUNNING
             try:
                 result = func(*args, **kwargs)
             except Exception as exc:  # noqa: BLE001 - errors are task results
-                with self._lock:
-                    task["status"] = TaskStatus.FAILED
-                    task["error"] = f"{exc}\n{traceback.format_exc(limit=3)}"
+                outcome = {"status": TaskStatus.FAILED, "error": f"{exc}\n{traceback.format_exc(limit=3)}"}
             else:
-                with self._lock:
-                    task["status"] = TaskStatus.DONE
-                    task["result"] = result
+                outcome = {"status": TaskStatus.DONE, "result": result}
             finally:
                 self._pq.task_done()
+            with self._lock:
+                if self._deadline is not None and time.monotonic() >= self._deadline:
+                    task["status"] = TaskStatus.TIMEOUT
+                elif task["status"] == TaskStatus.RUNNING:
+                    task.update(outcome)
 
     def status(self, task_id: int) -> dict:
         """Snapshot of a task. Raises KeyError for unknown ids."""
@@ -93,7 +99,7 @@ class TaskQueue:
         deadline = time.time() + timeout
         while time.time() < deadline:
             snap = self.status(task_id)
-            if snap["status"] in (TaskStatus.DONE, TaskStatus.FAILED):
+            if snap["status"] in (TaskStatus.DONE, TaskStatus.FAILED, TaskStatus.TIMEOUT):
                 return snap
             time.sleep(0.01)
         raise TimeoutError(f"task {task_id} did not finish in {timeout}s")
@@ -104,15 +110,31 @@ class TaskQueue:
         while time.time() < deadline:
             with self._lock:
                 pending = [t for t in self._tasks.values() if t["status"] in (TaskStatus.PENDING, TaskStatus.RUNNING)]
-            if not pending and self._pq.empty():
+            if not pending:
                 break
             time.sleep(0.01)
         with self._lock:
             return [dict(self._tasks[k]) for k in sorted(self._tasks)]
 
-    def shutdown(self, wait: bool = False) -> None:
-        """Stop accepting queued work and optionally wait for active writers."""
-        self._stop.set()
+    def shutdown(self, wait: bool = False, timeout: float | None = None) -> None:
+        """Close submissions. A bounded wait lets queued work drain until the deadline."""
+        deadline = time.monotonic() + timeout if wait and timeout is not None else None
+        with self._lock:
+            if deadline is not None and (self._deadline is None or deadline < self._deadline):
+                self._deadline = deadline
+            if not self._closed:
+                self._closed = True
+                # Bounded drain: stop markers follow queued tasks. Otherwise keep
+                # the original immediate stop, allowing only active calls to finish.
+                priority = float("inf") if deadline is not None else float("-inf")
+                for _ in self._threads:
+                    self._pq.put((priority, -1, None, (), {}))
         if wait:
             for thread in self._threads:
-                thread.join()
+                remaining = None if deadline is None else max(0, deadline - time.monotonic())
+                thread.join(remaining)
+        if deadline is not None:
+            with self._lock:
+                for task in self._tasks.values():
+                    if task["status"] in (TaskStatus.PENDING, TaskStatus.RUNNING):
+                        task["status"] = TaskStatus.TIMEOUT

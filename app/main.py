@@ -6,6 +6,7 @@ Main entry point
 import json
 import sys
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 # Allow `python app/main.py` (script dir is app/, project root must be on path)
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -76,44 +77,60 @@ def cmd_mod(folder: str, out: str, voice: str = "", engine: str = "piper", worke
     output = Path(out)
     output.mkdir(parents=True, exist_ok=True)
     results = []
-    q = TaskQueue(workers=workers)
-    jobs = []
-    try:
-        for i, line in enumerate(lines):
-            result = {
-                "index": i, "source_file": line.source_file, "line_no": line.line_no,
-                "speaker": line.speaker, "status": "failed", "skipped_reason": None,
-            }
-            results.append(result)
-            if translate_to:
-                try:
-                    line = translate_line(line, translate_to, provider=provider)
-                except Exception as exc:
-                    result["skipped_reason"] = f"Translation failed: {str(exc) or type(exc).__name__}"
-                    continue
-            line.voice_id = line.voice_id or voice
-            if line.emotion == "neutral":
-                line.emotion = emotion
-            name = f"{i:04d}_{line.speaker or 'narrator'}.wav"
-            tid = q.submit(generate_voice_to_file, line, str(output / name),
-                           engine=engine, name=name)
-            jobs.append((tid, line, result))
-        q.wait_all(timeout=600)
-    finally:
-        # After the deadline, stop taking new lines. A running writer must
-        # finish before its outcome can be included in the terminal report.
-        q.shutdown(wait=True)
+    with TemporaryDirectory(dir=output, prefix=".agv-batch-") as batch:
+        ready = Path(batch) / "ready"
+        ready.mkdir()
 
-    completed = []
-    for tid, line, result in jobs:
-        task = q.status(tid)
-        if task["status"] == TaskStatus.DONE:
-            result.update(status="succeeded", wav=task["name"])
-            completed.append(line)
-        elif task["status"] == TaskStatus.FAILED:
-            result["skipped_reason"] = task["error"].splitlines()[0] or "TTS failed"
-        else:
-            result["skipped_reason"] = "Batch timed out before synthesis started"
+        def synthesize(line, index):
+            # A worker may outlive the batch. Keep its open file private until
+            # synthesis completes, including on Windows where it cannot be unlinked.
+            with TemporaryDirectory(dir=output, prefix=".agv-tts-") as scratch:
+                wav = Path(scratch) / "line.wav"
+                generate_voice_to_file(line, str(wav), engine=engine)
+                wav.replace(ready / f"{index}.wav")
+
+        q = TaskQueue(workers=workers)
+        jobs = []
+        try:
+            for i, line in enumerate(lines):
+                result = {
+                    "index": i, "source_file": line.source_file, "line_no": line.line_no,
+                    "speaker": line.speaker, "status": "failed", "skipped_reason": None,
+                }
+                results.append(result)
+                if translate_to:
+                    try:
+                        line = translate_line(line, translate_to, provider=provider)
+                    except Exception as exc:
+                        result["skipped_reason"] = f"Translation failed: {str(exc) or type(exc).__name__}"
+                        continue
+                line.voice_id = line.voice_id or voice
+                if line.emotion == "neutral":
+                    line.emotion = emotion
+                name = f"{i:04d}_{line.speaker or 'narrator'}.wav"
+                tid = q.submit(synthesize, line, i, name=name)
+                jobs.append((tid, line, result))
+        finally:
+            q.shutdown(wait=True, timeout=60)
+
+        # Seal the directory atomically. A late writer can no longer add files
+        # while the report is finalized or the temporary directory is removed.
+        finished = ready.rename(Path(batch) / "finished")
+        completed = []
+        for tid, line, result in jobs:
+            task = q.status(tid)
+            if task["status"] == TaskStatus.DONE:
+                try:
+                    (finished / f"{result['index']}.wav").replace(output / task["name"])
+                except OSError as exc:
+                    result["skipped_reason"] = f"Could not publish WAV: {exc}"
+                else:
+                    result.update(status="succeeded", wav=task["name"])
+                    completed.append(line)
+            elif task["status"] == TaskStatus.FAILED:
+                result["skipped_reason"] = task["error"].splitlines()[0] or "TTS failed"
+            elif task["status"] == TaskStatus.TIMEOUT:
+                result["skipped_reason"] = "TTS timed out"
 
     total, succeeded = len(lines), len(completed)
     failed = total - succeeded

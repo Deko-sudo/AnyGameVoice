@@ -61,3 +61,42 @@ def test_wait_timeout():
     with pytest.raises(TimeoutError):
         q.wait(tid, timeout=0.1)
     q.shutdown()
+
+
+def test_shutdown_freezes_running_and_queued_tasks():
+    import threading
+    from unittest.mock import patch
+
+    from app.core.queue.task_queue import TaskQueue, TaskStatus
+
+    queue = TaskQueue(workers=2)
+    started = threading.Barrier(3)
+    release = threading.Event()
+    pending_ran = threading.Event()
+
+    def block(fail):
+        started.wait(timeout=2)
+        release.wait(timeout=3)
+        if fail:
+            raise ValueError("late error")
+        return "late result"
+
+    running = [queue.submit(block, fail) for fail in (False, True)]
+    try:
+        started.wait(timeout=2)
+        pending = queue.submit(pending_ran.set)
+        # The first blocked worker uses the budget. The second gets no extra wait.
+        last_worker = queue._threads[-1]
+        with patch.object(last_worker, "join", wraps=last_worker.join) as last_join:
+            queue.shutdown(wait=True, timeout=0.05)
+        last_join.assert_called_once_with(0)
+        for tid in [*running, pending]:
+            assert queue.wait(tid)["status"] == TaskStatus.TIMEOUT
+    finally:
+        release.set()
+        queue.shutdown(wait=True)
+
+    assert not pending_ran.is_set()
+    for task in queue.wait_all():
+        assert task["status"] == TaskStatus.TIMEOUT
+        assert task["error"] is None and task["result"] is None
