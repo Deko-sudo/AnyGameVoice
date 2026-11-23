@@ -9,7 +9,8 @@ Dialogue lines may carry a leading tag: `[happy] Hello!` or
 - xtts/silero: tags stripped (no emotion backend), text stays clean so
   the model never reads "[happy]" aloud.
 
-Unknown tags are stripped and treated as neutral — never synthesized.
+EMOTIONS supplies the prosody tags, and BARK_MARKERS supplies Bark's sounds.
+Unrecognised bracketed names can be Ren'Py substitutions and are preserved.
 """
 
 import re
@@ -17,6 +18,7 @@ import re
 __all__ = [
     "EMOTIONS",
     "BARK_MARKERS",
+    "STRIP_ALWAYS",
     "parse_emotion",
     "strip_emotion_tags",
     "piper_flags",
@@ -37,33 +39,29 @@ EMOTIONS = {
 
 # Markers bark understands natively — never stripped for bark.
 BARK_MARKERS = {"laughs", "sighs", "gasps", "coughs", "uh", "um", "music"}
+STRIP_ALWAYS = EMOTIONS.keys() | BARK_MARKERS
 
-_LEAD_TAG = re.compile(r"^\s*(?:\[(\w+)\]|<emotion\s*=\s*[\"'](\w+)[\"']\s*>)\s*", re.IGNORECASE)
-_ANY_TAG = re.compile(r"\[\w+\]|<emotion\s*=\s*[\"']\w+[\"']\s*>", re.IGNORECASE)
+_TAG = re.compile(r"\[(\w+)\]|<emotion\s*=\s*[\"'](\w+)[\"']\s*>", re.IGNORECASE)
 
 
 def parse_emotion(text: str) -> tuple:
     """Split leading emotion tag. Returns (emotion, clean_text)."""
-    m = _LEAD_TAG.match(text or "")
-    if not m:
-        return "neutral", (text or "").strip()
-    tag = (m.group(1) or m.group(2) or "").lower()
-    rest = text[m.end():].strip()
-    if tag in EMOTIONS:
-        return tag, rest
-    if tag in BARK_MARKERS:
-        return "neutral", text.strip()  # bark-native marker, keep in text
-    return "neutral", rest  # unknown tag: drop it, never synthesize
+    text = (text or "").strip()
+    m = _TAG.match(text)
+    if m:
+        tag = (m.group(1) or m.group(2)).lower()
+        if tag in EMOTIONS:
+            return tag, text[m.end():].lstrip()
+    return "neutral", text
 
 
 def strip_emotion_tags(text: str, keep_markers: frozenset = frozenset()) -> str:
-    """Remove our [tag]/<emotion> markers; keep listed bark-native ones."""
+    """Remove known emotions and sounds except keep_markers. Preserve variables such as [dragon]."""
     def _drop(m):
-        inner = m.group(0).strip("[]<>")
-        word = inner.split("=")[-1].strip("\"' ").lower()
-        return m.group(0) if word in keep_markers else ""
+        tag = (m.group(1) or m.group(2)).lower()
+        return "" if tag in STRIP_ALWAYS and tag not in keep_markers else m.group(0)
 
-    return _ANY_TAG.sub(_drop, text or "").strip()
+    return _TAG.sub(_drop, text or "").strip()
 
 
 def piper_flags(emotion: str) -> list:
@@ -83,9 +81,9 @@ def apply_emotion(engine: str, text: str) -> tuple:
 
     extra_kwargs: piper -> {"cli_flags": [...]}, others -> {}.
     """
-    emotion, clean = parse_emotion(text)
     if (engine or "") == "piper":
-        return clean, {"cli_flags": piper_flags(emotion)}
+        emotion, clean = parse_emotion(text)
+        return strip_emotion_tags(clean), {"cli_flags": piper_flags(emotion)}
     if (engine or "") == "bark":
         return strip_emotion_tags(text, keep_markers=frozenset(BARK_MARKERS)), {}
     return strip_emotion_tags(text), {}

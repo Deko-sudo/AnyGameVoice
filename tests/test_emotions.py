@@ -1,5 +1,7 @@
 """Emotion tests (offline)."""
 
+import pytest
+
 
 def test_parse_emotion():
     from app.core.tts.emotions import parse_emotion
@@ -7,10 +9,24 @@ def test_parse_emotion():
     assert parse_emotion("[happy] Hello!") == ("happy", "Hello!")
     assert parse_emotion('<emotion="sad">Rain.') == ("sad", "Rain.")
     assert parse_emotion("Plain line.") == ("neutral", "Plain line.")
-    emo, clean = parse_emotion("[dragon] Rawr")
-    assert emo == "neutral" and clean == "Rawr"  # unknown tag dropped, never read aloud
+    assert parse_emotion("[dragon] Rawr") == ("neutral", "[dragon] Rawr")
+    assert parse_emotion("[player_name]") == ("neutral", "[player_name]")
+    assert parse_emotion("[score] points") == ("neutral", "[score] points")
     emo, clean = parse_emotion("[laughs] Ha ha")
     assert emo == "neutral" and "[laughs]" in clean  # bark-native marker kept
+
+
+def test_substitution_inside_renpy_tag_survives_emotion_processing(tmp_path):
+    from app.core.game_detector.engines.renpy import extract_renpy_file
+    from app.core.tts.emotions import apply_emotion, parse_emotion
+
+    script = tmp_path / "script.rpy"
+    script.write_text('e "{b}[player_name]{/b}"\n', encoding="utf-8")
+    line, = extract_renpy_file(str(script))
+    assert parse_emotion(line.source_text) == ("neutral", "[player_name]")
+    for engine in ("piper", "bark", "xtts", "silero"):
+        text, _ = apply_emotion(engine, "[happy] [player_name] has [score] points")
+        assert text == "[player_name] has [score] points"
 
 
 def test_piper_flags():
@@ -29,6 +45,18 @@ def test_apply_emotion_bark_markers():
     assert "[happy]" not in clean and "[laughs]" in clean
     clean, _ = apply_emotion("xtts", "[angry] Quiet!")
     assert clean == "Quiet!"
+
+
+@pytest.mark.parametrize(("engine", "text", "expected"), [
+    ("piper", "[laughs] Ha ha", "Ha ha"),
+    ("xtts", "[sighs] Ha", "Ha"),
+    ("silero", "[dragon] Rawr", "[dragon] Rawr"),
+    ("bark", "[laughs] Ha ha", "[laughs] Ha ha"),
+])
+def test_engine_marker_policy(engine, text, expected):
+    from app.core.tts.emotions import apply_emotion
+
+    assert apply_emotion(engine, text)[0] == expected
 
 
 def test_piper_command_uses_flags(tmp_path, monkeypatch):
@@ -69,5 +97,7 @@ def test_generator_emotion_passthrough(tmp_path, monkeypatch):
             return b"AUDIO"
 
     monkeypatch.setattr(gen, "get_engine", lambda name, voice="": FakeEng())
-    assert gen.generate_voice("hi", voice="v", engine="xtts", emotion="happy") == b"AUDIO"
-    assert seen == {"text": "hi", "emotion": "happy"}
+    for engine in ("xtts", "silero"):
+        audio = gen.generate_voice("[laughs] hi [score]", voice="v", engine=engine, emotion="happy")
+        assert audio == b"AUDIO"
+        assert seen == {"text": "hi [score]", "emotion": "happy"}

@@ -7,6 +7,7 @@ packages and raise a clear RuntimeError otherwise.
 
 from app.models.line import Line
 
+from .emotions import strip_emotion_tags
 from .engines.bark import BarkEngine
 from .engines.piper import PiperEngine
 from .engines.silero import SileroEngine
@@ -44,6 +45,8 @@ def generate_voice(text: str | Line, voice: str = "default", engine: str = "pipe
         if text.emotion != "neutral":
             emotion = text.emotion
         text = text.tts_text or text.text
+    if engine in ("xtts", "silero"):
+        text = strip_emotion_tags(text)
     if not text or not text.strip():
         raise ValueError("text must not be empty")
     if engine == "piper" and (not voice or voice == "default"):

@@ -9,12 +9,11 @@ from pathlib import Path
 
 import pytest
 
-from app.core import translate
 from app.core.extractor.dialogue_extractor import extract_dialogue
-from app.core.replacer.audio_replacer import replace_audio
-from app.core.replacer.backup import restore_file
+from app.core.replacer.audio_replacer import replace_audio, uninstall_audio
 from app.core.tts import generator
 from app.main import cmd_mod
+from app.providers.ollama_provider import OllamaProvider
 
 REFERENCE = Path(__file__).parent / "fixtures" / "renpy_reference"
 BEACON = Path("game/voice/beacon.wav")
@@ -54,13 +53,15 @@ def dubbed_copy(tmp_path, monkeypatch):
     game = shutil.copytree(REFERENCE, tmp_path / "reference")
     output = tmp_path / "output"
 
-    def fake_translate(text, target, *args):
-        assert target == "es"
-        # A fixed utterance also lets placeholder-only lines exercise WAV generation.
-        return "Prueba de voz."
+    placeholders = {18: "[player_name]", 19: "[score]"}
+
+    def fake_completion(self, prompt, system=""):
+        source = prompt.splitlines()[-1]
+        return source if source in placeholders.values() else "Prueba de voz."
 
     def fake_tts(line, out_path, **kwargs):
-        assert (line.target_lang, line.tts_text) == ("es", "Prueba de voz.")
+        assert line.target_lang == "es"
+        assert line.tts_text == placeholders.get(line.line_no, "Prueba de voz.")
         # Encode the source line number in the period of a short PCM square wave.
         period = b"\x00\x10" * line.line_no + b"\x00\xf0" * line.line_no
         with wave.open(out_path, "wb") as wav:
@@ -68,7 +69,7 @@ def dubbed_copy(tmp_path, monkeypatch):
             wav.writeframes(period * 32)
         return out_path
 
-    monkeypatch.setattr(translate, "translate_text", fake_translate)
+    monkeypatch.setattr(OllamaProvider, "complete", fake_completion)
     monkeypatch.setattr(generator, "generate_voice_to_file", fake_tts)
     report = cmd_mod(str(game), str(output), translate_to="es")
     saved = json.loads((output / "report.json").read_text(encoding="utf-8"))
@@ -108,8 +109,7 @@ def restored_game(dubbed_copy, golden):
     assert list(game.rglob("*.bak")) == [backup]
     assert backup.parent == target.parent and backup.read_bytes() == original
     assert target.read_bytes() == generated.read_bytes()
-    assert Path(restore_file(str(backup))) == target
-    assert set(game.rglob("*.bak")) <= {backup}
+    assert uninstall_audio(str(target), str(backup)) is True
     return game
 
 
@@ -117,6 +117,5 @@ def test_reference_install_and_restore(restored_game):
     assert (restored_game / BEACON).read_bytes() == (REFERENCE / BEACON).read_bytes()
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason="restore_file keeps the consumed .bak")
 def test_reference_restore_leaves_no_backups(restored_game):
     assert list(restored_game.rglob("*.bak")) == []

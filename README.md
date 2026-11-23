@@ -67,6 +67,30 @@ python app/main.py ui 8000                # local web UI
 4. Batch-generate wavs + subtitles
 5. Install into the game with automatic backups
 
+### Uninstalling a mod
+
+Keep the backup path returned by `replace_audio` for each file you install.
+Pass that path and the same target to `uninstall_audio` when removing the mod.
+
+```python
+from app.core.replacer.audio_replacer import replace_audio, uninstall_audio
+
+target = "game/voice/beacon.wav"
+backup = replace_audio(target, "output/0000_e.wav")
+# Later, restore the original clip.
+restored = uninstall_audio(target, backup)
+```
+
+`True` means the original was restored. The backup is normally removed.
+If cleanup fails, the call still returns `True` and logs a warning with the
+backup path and reason. If restoration fails, the call returns `False` and
+logs the error. A failed copy leaves the backup available for a retry.
+Calling `restore_file(backup)` after the backup has been removed raises
+`FileNotFoundError`.
+
+Uninstall currently operates on one file per call. Manifest-based uninstall
+for an entire mod is planned for Phase 1.
+
 ### Job status
 
 The web UI shows the result of each batch with its succeeded/total and failed/total counts.
@@ -97,6 +121,9 @@ finish the queue. Any unfinished line counts as failed with the reason
 
 ### Translation and voice limitations
 
+- Bark keeps sound markers such as `[laughs]` and `[sighs]`. Piper, XTTS and
+  Silero strip these markers before synthesis. Unknown names such as
+  `[dragon]` are preserved because they can be Ren'Py substitutions, just like `[score]`.
 - To preserve a manual translation, set `manual_override`, provide `translated_text`, and set the line's `target_lang` to the requested language. An empty `target_lang` causes the batch to translate the line again when a target is requested.
 - A character's assigned `line.voice_id` takes precedence over CLI `--voice`. The CLI voice applies to lines without an assigned voice.
 
