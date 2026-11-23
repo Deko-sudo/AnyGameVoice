@@ -1,0 +1,216 @@
+diff --git a/README.md b/README.md
+--- a/README.md
++++ b/README.md
+@@ -81,10 +81,12 @@
+ restored = uninstall_audio(target, backup)
+ ```
+ 
+-`True` means the original was restored and the backup removed. On failure,
+-the function returns `False` and logs the reason. A failed copy leaves the
+-backup available for a retry. Calling the lower-level `restore_file(backup)`
+-again after success raises `FileNotFoundError`.
++`True` means the original was restored. The backup is normally removed.
++If cleanup fails, the call still returns `True` and logs a warning with the
++backup path and reason. If restoration fails, the call returns `False` and
++logs the error. A failed copy leaves the backup available for a retry.
++Calling `restore_file(backup)` after the backup has been removed raises
++`FileNotFoundError`.
+ 
+ Uninstall currently operates on one file per call. Manifest-based uninstall
+ for an entire mod is planned for Phase 1.
+@@ -119,6 +121,9 @@
+ 
+ ### Translation and voice limitations
+ 
++- Bark keeps sound markers such as `[laughs]` and `[sighs]`. Piper, XTTS and
++  Silero strip these markers before synthesis. Unknown names such as
++  `[dragon]` are preserved because they can be Ren'Py substitutions, just like `[score]`.
+ - To preserve a manual translation, set `manual_override`, provide `translated_text`, and set the line's `target_lang` to the requested language. An empty `target_lang` causes the batch to translate the line again when a target is requested.
+ - A character's assigned `line.voice_id` takes precedence over CLI `--voice`. The CLI voice applies to lines without an assigned voice.
+ 
+diff --git a/app/core/replacer/backup.py b/app/core/replacer/backup.py
+--- a/app/core/replacer/backup.py
++++ b/app/core/replacer/backup.py
+@@ -4,12 +4,15 @@
+ Backups live next to the original: <name>.<timestamp>.bak
+ """
+ 
++import logging
+ import os
+ import re
+ import shutil
+ import time
+ 
+ __all__ = ["backup_file", "restore_file"]
++
++logger = logging.getLogger(__name__)
+ 
+ 
+ def backup_file(path: str) -> str:
+@@ -30,7 +33,7 @@
+ 
+ 
+ def restore_file(backup: str, original: str = "") -> str:
+-    """Restore the original, then remove its backup. A missing backup raises FileNotFoundError."""
++    """Restore the original. A missing backup raises FileNotFoundError; cleanup errors are logged."""
+     if not backup or not os.path.isfile(backup):
+         raise FileNotFoundError(f"Backup not found: {backup}")
+     target = original or _original_path(backup)
+@@ -43,4 +46,6 @@
+         os.unlink(backup)
+     except FileNotFoundError:
+         pass
++    except OSError as exc:
++        logger.warning("Restored %s, but could not remove backup %s: %s", target, backup, exc)
+     return target
+diff --git a/app/core/tts/emotions.py b/app/core/tts/emotions.py
+--- a/app/core/tts/emotions.py
++++ b/app/core/tts/emotions.py
+@@ -9,8 +9,8 @@
+ - xtts/silero: tags stripped (no emotion backend), text stays clean so
+   the model never reads "[happy]" aloud.
+ 
+-Only names in EMOTIONS are emotion tags. Other bracketed text can contain
+-Ren'Py substitutions or engine-specific markers and is preserved.
++EMOTIONS supplies the prosody tags, and BARK_MARKERS supplies Bark's sounds.
++Unrecognised bracketed names can be Ren'Py substitutions and are preserved.
+ """
+ 
+ import re
+@@ -18,6 +18,7 @@
+ __all__ = [
+     "EMOTIONS",
+     "BARK_MARKERS",
++    "STRIP_ALWAYS",
+     "parse_emotion",
+     "strip_emotion_tags",
+     "piper_flags",
+@@ -38,6 +39,7 @@
+ 
+ # Markers bark understands natively — never stripped for bark.
+ BARK_MARKERS = {"laughs", "sighs", "gasps", "coughs", "uh", "um", "music"}
++STRIP_ALWAYS = EMOTIONS.keys() | BARK_MARKERS
+ 
+ _TAG = re.compile(r"\[(\w+)\]|<emotion\s*=\s*[\"'](\w+)[\"']\s*>", re.IGNORECASE)
+ 
+@@ -54,10 +56,10 @@
+ 
+ 
+ def strip_emotion_tags(text: str, keep_markers: frozenset = frozenset()) -> str:
+-    """Remove our [tag]/<emotion> markers; keep listed bark-native ones."""
++    """Remove known emotions and sounds except keep_markers. Preserve variables such as [dragon]."""
+     def _drop(m):
+         tag = (m.group(1) or m.group(2)).lower()
+-        return "" if tag in EMOTIONS and tag not in keep_markers else m.group(0)
++        return "" if tag in STRIP_ALWAYS and tag not in keep_markers else m.group(0)
+ 
+     return _TAG.sub(_drop, text or "").strip()
+ 
+@@ -79,9 +81,9 @@
+ 
+     extra_kwargs: piper -> {"cli_flags": [...]}, others -> {}.
+     """
+-    emotion, clean = parse_emotion(text)
+     if (engine or "") == "piper":
+-        return clean, {"cli_flags": piper_flags(emotion)}
++        emotion, clean = parse_emotion(text)
++        return strip_emotion_tags(clean), {"cli_flags": piper_flags(emotion)}
+     if (engine or "") == "bark":
+         return strip_emotion_tags(text, keep_markers=frozenset(BARK_MARKERS)), {}
+     return strip_emotion_tags(text), {}
+diff --git a/app/core/tts/generator.py b/app/core/tts/generator.py
+--- a/app/core/tts/generator.py
++++ b/app/core/tts/generator.py
+@@ -7,6 +7,7 @@
+ 
+ from app.models.line import Line
+ 
++from .emotions import strip_emotion_tags
+ from .engines.bark import BarkEngine
+ from .engines.piper import PiperEngine
+ from .engines.silero import SileroEngine
+@@ -44,6 +45,8 @@
+         if text.emotion != "neutral":
+             emotion = text.emotion
+         text = text.tts_text or text.text
++    if engine in ("xtts", "silero"):
++        text = strip_emotion_tags(text)
+     if not text or not text.strip():
+         raise ValueError("text must not be empty")
+     if engine == "piper" and (not voice or voice == "default"):
+diff --git a/tests/test_emotions.py b/tests/test_emotions.py
+--- a/tests/test_emotions.py
++++ b/tests/test_emotions.py
+@@ -1,4 +1,6 @@
+ """Emotion tests (offline)."""
++
++import pytest
+ 
+ 
+ def test_parse_emotion():
+@@ -45,6 +47,18 @@
+     assert clean == "Quiet!"
+ 
+ 
++@pytest.mark.parametrize(("engine", "text", "expected"), [
++    ("piper", "[laughs] Ha ha", "Ha ha"),
++    ("xtts", "[sighs] Ha", "Ha"),
++    ("silero", "[dragon] Rawr", "[dragon] Rawr"),
++    ("bark", "[laughs] Ha ha", "[laughs] Ha ha"),
++])
++def test_engine_marker_policy(engine, text, expected):
++    from app.core.tts.emotions import apply_emotion
++
++    assert apply_emotion(engine, text)[0] == expected
++
++
+ def test_piper_command_uses_flags(tmp_path, monkeypatch):
+     from app.core.tts.engines.piper import PiperEngine
+ 
+@@ -83,5 +97,7 @@
+             return b"AUDIO"
+ 
+     monkeypatch.setattr(gen, "get_engine", lambda name, voice="": FakeEng())
+-    assert gen.generate_voice("hi", voice="v", engine="xtts", emotion="happy") == b"AUDIO"
+-    assert seen == {"text": "hi", "emotion": "happy"}
++    for engine in ("xtts", "silero"):
++        audio = gen.generate_voice("[laughs] hi [score]", voice="v", engine=engine, emotion="happy")
++        assert audio == b"AUDIO"
++        assert seen == {"text": "hi [score]", "emotion": "happy"}
+diff --git a/tests/test_replacer.py b/tests/test_replacer.py
+--- a/tests/test_replacer.py
++++ b/tests/test_replacer.py
+@@ -1,5 +1,6 @@
+ """Replacer tests."""
+ 
++import logging
+ import os
+ import shutil
+ from pathlib import Path
+@@ -68,6 +69,26 @@
+     assert target.read_bytes() == b"original" and not Path(backup).exists()
+ 
+ 
++def test_restore_and_uninstall_succeed_when_backup_cleanup_is_denied(tmp_path, monkeypatch, caplog):
++    target = tmp_path / "voice.wav"
++    target.write_bytes(b"original")
++    backup = backup_file(str(target))
++
++    def deny_unlink(path):
++        raise PermissionError("cleanup denied")
++
++    monkeypatch.setattr(os, "unlink", deny_unlink)
++    target.write_bytes(b"mod")
++    assert restore_file(backup) == str(target)
++    assert target.read_bytes() == Path(backup).read_bytes() == b"original"
++    assert any(record.levelno == logging.WARNING and backup in record.getMessage()
++               and "cleanup denied" in record.getMessage() for record in caplog.records)
++
++    target.write_bytes(b"mod")
++    assert uninstall_audio(str(target), backup) is True
++    assert target.read_bytes() == Path(backup).read_bytes() == b"original"
++
++
+ def test_replace_and_uninstall_audio(tmp_path):
+     target = tmp_path / "voice.wav"
+     target.write_bytes(b"game-audio")

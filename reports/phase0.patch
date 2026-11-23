@@ -1,0 +1,300 @@
+diff --git a/tests/fixtures/renpy_reference/.gitignore b/tests/fixtures/renpy_reference/.gitignore
+new file mode 100644
+index 0000000..7522642
+--- /dev/null
++++ b/tests/fixtures/renpy_reference/.gitignore
+@@ -0,0 +1 @@
++!game/voice/beacon.wav
+diff --git a/tests/fixtures/renpy_reference/expected.json b/tests/fixtures/renpy_reference/expected.json
+new file mode 100644
+index 0000000..1d80235
+--- /dev/null
++++ b/tests/fixtures/renpy_reference/expected.json
+@@ -0,0 +1,29 @@
++[
++  {"engine_id": "renpy", "source_file": "script.rpy", "line_no": 8, "speaker": "e", "source_text": "Do you hear the beacon?"},
++  {"engine_id": "renpy", "source_file": "script.rpy", "line_no": 9, "speaker": "narrator", "source_text": "Fog rolls across the dock."},
++  {"engine_id": "renpy", "source_file": "script.rpy", "line_no": 10, "speaker": "s", "source_text": "I'm listening."},
++  {"engine_id": "renpy", "source_file": "script.rpy", "line_no": 11, "speaker": "e", "source_text": "Stand by."},
++  {"engine_id": "renpy", "source_file": "script.rpy", "line_no": 12, "speaker": "s", "source_text": "Stand by."},
++  {"engine_id": "renpy", "source_file": "script.rpy", "line_no": 13, "speaker": "e", "source_text": "Mark the tide."},
++  {"engine_id": "renpy", "source_file": "script.rpy", "line_no": 15, "speaker": "e", "source_text": "важное"},
++  {"engine_id": "renpy", "source_file": "script.rpy", "line_no": 16, "speaker": "s", "source_text": "курсив"},
++  {"engine_id": "renpy", "source_file": "script.rpy", "line_no": 17, "speaker": "e", "source_text": "красное"},
++  {"engine_id": "renpy", "source_file": "script.rpy", "line_no": 18, "speaker": "s", "source_text": "[player_name]"},
++  {"engine_id": "renpy", "source_file": "script.rpy", "line_no": 19, "speaker": "e", "source_text": "[score]"},
++  {"engine_id": "renpy", "source_file": "script.rpy", "line_no": 20, "speaker": "e", "source_text": "At the helm: [player_name]."},
++  {"engine_id": "renpy", "source_file": "script.rpy", "line_no": 21, "speaker": "s", "source_text": "Gauge reading: [score]."},
++  {"engine_id": "renpy", "source_file": "script.rpy", "line_no": 22, "speaker": "narrator", "source_text": "Watch log: [player_name] / [score]."},
++  {"engine_id": "renpy", "source_file": "script.rpy", "line_no": 23, "speaker": "e", "source_text": "He said \"hi\"."},
++  {"engine_id": "renpy", "source_file": "script.rpy", "line_no": 24, "speaker": "s", "source_text": "Берег уже близко."},
++  {"engine_id": "renpy", "source_file": "script.rpy", "line_no": 25, "speaker": "e", "source_text": "灯台が見えます。"},
++  {"engine_id": "renpy", "source_file": "script.rpy", "line_no": 26, "speaker": "narrator", "source_text": "One light is still burning 🏮."},
++  {"engine_id": "renpy", "source_file": "script.rpy", "line_no": 32, "speaker": "e", "source_text": "The bell hangs above the steps."},
++  {"engine_id": "renpy", "source_file": "script.rpy", "line_no": 33, "speaker": "s", "source_text": "Three rings mean high water."},
++  {"engine_id": "renpy", "source_file": "script.rpy", "line_no": 35, "speaker": "s", "source_text": "The lamp points to the breakwater."},
++  {"engine_id": "renpy", "source_file": "script.rpy", "line_no": 36, "speaker": "narrator", "source_text": "A green flash crosses the channel."},
++  {"engine_id": "renpy", "source_file": "script.rpy", "line_no": 38, "speaker": "e", "source_text": "Mark the tide."},
++  {"engine_id": "renpy", "source_file": "script.rpy", "line_no": 39, "speaker": "s", "source_text": "Write one mark beside two."},
++  {"engine_id": "renpy", "source_file": "script.rpy", "line_no": 40, "speaker": "narrator", "source_text": "The chart shows a # beside the pier."},
++  {"engine_id": "renpy", "source_file": "script.rpy", "line_no": 41, "speaker": "s", "source_text": "Ready, [player_name]?"},
++  {"engine_id": "renpy", "source_file": "script.rpy", "line_no": 42, "speaker": "e", "source_text": "Close the log."}
++]
+diff --git a/tests/fixtures/renpy_reference/game/script.rpy b/tests/fixtures/renpy_reference/game/script.rpy
+new file mode 100644
+index 0000000..d68e426
+--- /dev/null
++++ b/tests/fixtures/renpy_reference/game/script.rpy
+@@ -0,0 +1,43 @@
++define e = Character("Ena")
++define s = Character("Sol")
++default player_name = "Robin"
++default score = 7
++
++label start:
++    voice "voice/beacon.wav"
++    e "Do you hear the beacon?"  # voiced: existing clip to replace and restore
++    "Fog rolls across the dock."  # narration: no explicit speaker
++    s "I'm listening."  # punctuation: apostrophe inside a double-quoted string
++    e "Stand by."  # repeated: same text, diff speaker
++    s "Stand by."  # repeated: same text, diff speaker
++    e "Mark the tide."  # repeated: same speaker, diff line_no
++
++    e "{b}важное{/b}"  # tag: bold, preserve the enclosed word
++    s "{i}курсив{/i}"  # tag: italic, preserve the enclosed word
++    e "{color=#f00}красное{/color}"  # tag: a hash inside the colour value
++    s "[player_name]"  # substitution: a whole line containing the player name
++    e "[score]"  # substitution: a whole line containing the score
++    e "At the helm: {b}[player_name]{/b}."  # substitution: name inside bold
++    s "Gauge reading: {i}[score]{/i}."  # substitution: score inside italic
++    "Watch log: [player_name] / [score]."  # narration: both substitutions on one line
++    e "He said \"hi\"."  # escaping: literal quotation marks in dialogue
++    s "Берег уже близко."  # Unicode: a complete Russian sentence
++    e "灯台が見えます。"  # Unicode: Japanese characters and punctuation
++    "One light is still burning 🏮."  # Unicode: emoji in narration
++    s ""  # filtered: empty spoken line
++    e "{b}{/b}"  # filtered: only formatting remains
++
++    menu:
++        "Follow the bell":  # choice label: not spoken
++            e "The bell hangs above the steps."  # branch: option A, must survive
++            s "Three rings mean high water."  # branch: option A, second speaker
++        "Follow the light":  # choice label: not spoken
++            s "The lamp points to the breakwater."  # branch: option B, must survive
++            "A green flash crosses the channel."  # branch: option B, narration
++
++    e "Mark the tide."  # repeated: same speaker, diff line_no
++    s "Write {b}one{/b} mark beside {i}two{/i}."  # tags: two separate spans
++    "The chart shows a # beside the pier."  # punctuation: hash inside dialogue
++    s "Ready, [player_name]?"  # substitution: name followed by punctuation
++    e "Close the log."  # dialogue: final line before return
++    return
+diff --git a/tests/fixtures/renpy_reference/game/voice/beacon.wav b/tests/fixtures/renpy_reference/game/voice/beacon.wav
+new file mode 100644
+index 0000000000000000000000000000000000000000..9e02014975018c31650008aec6b3c1a7fd7619c3
+GIT binary patch
+literal 3244
+zcmWIYbaPw6!@v;k80MOmTcRMqz`(%Bz{ubr&%n@N$H2hEAi$84Sd!Sl!@$76;LZAt
+zvzRxMKc9aiZz$IR);b2A-#OpTe>(7?;e*I0zptl%vi^@@(dT@_qr~6Gugu58y_~Ir
+zQTC6;_n6QBKV*DZ`Ekyd7eBcFWirQeMDpC>o5$bIw}ZQ#y@*NZFVBx}pM5?ieDL}B
+z?K960p}$2;?d&_a+xh14-{FhoiRZ{<=KlBM$DA)KKW2RR{~_kH#dq016^zT-c(|4M
+z`uLUj-|*;j#;~ydKmF71tH`H@4+lP+|CIAh=XV{$0oG8ijlB8%k^IHH-#EQl85p+y
+z;`-M6Y59kVAN)V9{_60n>Hig$DV&D94*U)LZ+JIxnX>(6Sn~VgH<8cxJ`{bp`|-<{
+z$e$hm9y6cdSi-}|KZ8G<FNIrz{VU`2KMTJv|E%&c=|km5k1v%!`u@IS`ohk|vxRQ~
+z{}w(jo-ge0nEL)!{_yxx`7!B(%E#rO7k;1q=PRQGdkS|r-wb|6{v|voI36>1{EPhg
+z<;&fVMIY{c5cz!Z+mheE8BEzWalPSf;CJ9R<ekEKg{A4g!>`p}{Xb3ou>3>sC$4W>
+ke~re+Xnc(3kJ0=wT3(ITAEWihXnj7~z8Y;`4d?bQ0PBV|8vp<R
+
+literal 0
+HcmV?d00001
+
+diff --git a/tests/test_renpy_reference.py b/tests/test_renpy_reference.py
+new file mode 100644
+index 0000000..bfb21e5
+--- /dev/null
++++ b/tests/test_renpy_reference.py
+@@ -0,0 +1,122 @@
++"""Regression checks for the reference Ren'Py game, without a runtime or models."""
++
++import json
++import shutil
++import wave
++from difflib import unified_diff
++from operator import itemgetter
++from pathlib import Path
++
++import pytest
++
++from app.core import translate
++from app.core.extractor.dialogue_extractor import extract_dialogue
++from app.core.replacer.audio_replacer import replace_audio
++from app.core.replacer.backup import restore_file
++from app.core.tts import generator
++from app.main import cmd_mod
++
++REFERENCE = Path(__file__).parent / "fixtures" / "renpy_reference"
++BEACON = Path("game/voice/beacon.wav")
++FIELDS = ("engine_id", "source_file", "line_no", "speaker", "source_text")
++
++
++@pytest.fixture
++def golden():
++    return json.loads((REFERENCE / "expected.json").read_text(encoding="utf-8"))
++
++
++def test_reference_extraction(golden):
++    lines = extract_dialogue(str(REFERENCE))
++    actual = [{field: getattr(line, field) for field in FIELDS} for line in lines]
++
++    def rows(records):
++        ordered = sorted(records, key=itemgetter("source_file", "line_no"))
++        return [json.dumps(row, ensure_ascii=False, sort_keys=True) for row in ordered]
++
++    diff = list(unified_diff(
++        rows(golden), rows(actual), "expected.json", "extract_dialogue()", lineterm="",
++    ))
++    if diff:
++        pytest.fail("\n".join(diff), pytrace=False)
++
++    script = (REFERENCE / "game/script.rpy").read_text(encoding="utf-8").splitlines()
++    filtered = {n for n, text in enumerate(script, 1) if "# filtered:" in text}
++    assert len(filtered) == 2
++    assert filtered.isdisjoint(line.line_no for line in lines)
++    dialogue = {(line.speaker, line.source_text) for line in lines}
++    assert ("e", "The bell hangs above the steps.") in dialogue
++    assert ("s", "The lamp points to the breakwater.") in dialogue
++
++
++@pytest.fixture
++def dubbed_copy(tmp_path, monkeypatch):
++    game = shutil.copytree(REFERENCE, tmp_path / "reference")
++    output = tmp_path / "output"
++
++    def fake_translate(text, target, *args):
++        assert target == "es"
++        # A fixed utterance also lets placeholder-only lines exercise WAV generation.
++        return "Prueba de voz."
++
++    def fake_tts(line, out_path, **kwargs):
++        assert (line.target_lang, line.tts_text) == ("es", "Prueba de voz.")
++        # Encode the source line number in the period of a short PCM square wave.
++        period = b"\x00\x10" * line.line_no + b"\x00\xf0" * line.line_no
++        with wave.open(out_path, "wb") as wav:
++            wav.setparams((1, 2, 8000, 0, "NONE", "not compressed"))
++            wav.writeframes(period * 32)
++        return out_path
++
++    monkeypatch.setattr(translate, "translate_text", fake_translate)
++    monkeypatch.setattr(generator, "generate_voice_to_file", fake_tts)
++    report = cmd_mod(str(game), str(output), translate_to="es")
++    saved = json.loads((output / "report.json").read_text(encoding="utf-8"))
++    assert saved == report
++    return game, output, saved
++
++
++def test_reference_spanish_wavs(dubbed_copy, golden):
++    _, output, report = dubbed_copy
++    total = len(golden)
++    assert report["status"] == "done"
++    assert (report["total"], report["succeeded"], report["failed"]) == (total, total, 0)
++    location = itemgetter("source_file", "line_no", "speaker")
++    assert sorted(map(location, report["lines"])) == sorted(map(location, golden))
++    wav_names = [row["wav"] for row in report["lines"]]
++    assert sorted(wav_names) == sorted(path.name for path in output.glob("*.wav"))
++    for row in report["lines"]:
++        assert row["status"] == "succeeded" and row["skipped_reason"] is None
++        with wave.open(str(output / row["wav"]), "rb") as wav:
++            assert (wav.getnchannels(), wav.getsampwidth(), wav.getframerate()) == (1, 2, 8000)
++            assert wav.getcomptype() == "NONE"
++            assert wav.getnframes() == 64 * row["line_no"]
++            assert len(wav.readframes(wav.getnframes())) == 2 * wav.getnframes()
++
++
++@pytest.fixture
++def restored_game(dubbed_copy, golden):
++    game, output, report = dubbed_copy
++    voiced = next(row for row in golden if row["source_text"] == "Do you hear the beacon?")
++    location = itemgetter("source_file", "line_no", "speaker")
++    row = next(row for row in report["lines"] if location(row) == location(voiced))
++    generated = output / row["wav"]
++    target = game / BEACON
++    original = target.read_bytes()
++    assert generated.read_bytes() != original
++    backup = Path(replace_audio(str(target), str(generated)))
++    assert list(game.rglob("*.bak")) == [backup]
++    assert backup.parent == target.parent and backup.read_bytes() == original
++    assert target.read_bytes() == generated.read_bytes()
++    assert Path(restore_file(str(backup))) == target
++    assert set(game.rglob("*.bak")) <= {backup}
++    return game
++
++
++def test_reference_install_and_restore(restored_game):
++    assert (restored_game / BEACON).read_bytes() == (REFERENCE / BEACON).read_bytes()
++
++
++@pytest.mark.xfail(strict=True, raises=AssertionError, reason="restore_file keeps the consumed .bak")
++def test_reference_restore_leaves_no_backups(restored_game):
++    assert list(restored_game.rglob("*.bak")) == []
+diff --git a/reports/phase0.md b/reports/phase0.md
+new file mode 100644
+index 0000000..be8e032
+--- /dev/null
++++ b/reports/phase0.md
+@@ -0,0 +1,56 @@
++# Фаза 0. Эталонный проект Ren’Py
++
++**Готовность Фазы 0 — нет по критерию чистого снятия мода.** Набор готов для регрессионных проверок на `862afd9`. Из 29 реплик извлекаются 27. Установка заменяет WAV, восстановление возвращает исходные байты. После восстановления рядом с WAV остаётся один файл `.bak`.
++
++## Созданные файлы
++
++| Путь | Назначение |
++|---|---|
++| `tests/fixtures/renpy_reference/game/script.rpy` | Сценарий с двумя персонажами, рассказчиком, двумя ветками и комментарием к каждой реплике. Переменные подстановки имеют начальные значения. |
++| `tests/fixtures/renpy_reference/game/voice/beacon.wav` | Исходный звук для первой реплики. Синтетический тон 440 Гц, 0,2 с, моно PCM 16 бит, 8 кГц. |
++| `tests/fixtures/renpy_reference/.gitignore` | Разрешает включить именно этот WAV в Git при действующем общем правиле `*.wav`. |
++| `tests/fixtures/renpy_reference/expected.json` | Вручную сверенные пять полей для каждой извлечённой реплики в порядке строк сценария. |
++| `tests/test_renpy_reference.py` | Четыре проверки извлечения, генерации, замены с восстановлением и очистки резервной копии. |
++| `reports/phase0.md` | Этот отчёт. |
++| `reports/phase0.patch` | Применимый к `862afd9` дифф набора, теста и отчёта, включая исходный WAV. |
++
++## Извлечение и golden
++
++В сценарии **29** операторов речи и повествования. Названия двух вариантов меню и команда `voice` в это число не входят. В golden **27** записей. Отсеяны **2** реплики — пустая на строке 27 и состоящая только из тегов на строке 28.
++
++До записи golden отдельный вызов `extract_dialogue()` на коротком сценарии вернул для `{b}[player_name]{/b}: He said \"hi\".` текст `[player_name]: He said "hi".`. Для японского повествования спикером стал `narrator`. Записи с пустой строкой и пустой парой тегов отсутствовали.
++
++| Строки в `game/script.rpy` | Фактический результат в `Line` |
++|---|---|
++| 9, 22, 26, 36, 40 | Повествование получает спикера `narrator`. |
++| 11–13, 38 | У двух `Stand by.` разные спикеры. Обе `Mark the tide.` у `e` сохраняют собственный `line_no`. |
++| 15–22, 39, 41 | Разметка жирного, курсива и цвета удаляется. Слова и подстановки сохраняются, включая подстановки внутри тегов. |
++| 23–26 | Экранированные кавычки становятся обычными. Кириллица, японские символы и эмодзи сохраняются. |
++| 31–36 | Обе ветки дают по две реплики. Подписи вариантов в golden отсутствуют. |
++
++Для обязательных примеров расхождений с правилами извлечения не обнаружено. Очистка текста реализована в `app/core/game_detector/engines/renpy.py:29`, отбрасывание пустого результата — на строке 50. Регрессионный тест сортирует по `(source_file, line_no)` и выдаёт unified diff с одной записью на строку. Контрольная перестановка входа прошла. Подмена спикера на строке 8 дала diff с удалённой и добавленной записями.
++
++## Генерация, установка и снятие
++
++1. На копии игры в `tmp_path` вызван `cmd_mod(..., translate_to="es")`. Подмена `translate_text` возвращает фиксированное «Prueba de voz.» для любой строки. Подмена `generate_voice_to_file` проверяет язык и текст и пишет валидный PCM, период которого зависит от номера строки сценария.
++2. Отчёт на диске совпал с возвращённым результатом — `done`, `total=27`, `succeeded=27`, `failed=0`. Для каждой реплики проверены координаты, спикер, имя опубликованного WAV, формат, число кадров и фактическая длина данных.
++3. Команда `voice` на строке 7 связывает `game/voice/beacon.wav` с репликой на строке 8. Тест берёт соответствующий WAV из отчёта, вызывает `replace_audio` и сравнивает байты. Резервная копия содержит оригинал, а файл игры после установки содержит сгенерированный звук.
++4. `restore_file(backup)` восстанавливает правильный путь и исходное содержимое байт в байт. Отдельная проверка отсутствия `.bak` после снятия воспроизводит описанное ниже ограничение.
++
++## Found, not fixed
++
++- **Снятие оставляет резервную копию.** В `app/core/replacer/backup.py:37` выполняется копирование в целевой файл, затем функция возвращает путь. После успешного восстановления остаётся `game/voice/beacon.wav.<timestamp>.bak`. Проверка очистки помечена `xfail(strict=True)`. После исправления неожиданный успех сделает её видимой до снятия метки. Запуск с `--runxfail` подтвердил ровно один остаточный файл.
++- **Found: нет функции отката в самом `audio_replacer.py`.** Модуль экспортирует только `replace_audio` (`app/core/replacer/audio_replacer.py:11`). Для отдельного файла уже доступна `restore_file` из соседнего `backup.py:24`. Для чистого снятия нужен вызов восстановления с удалением использованной копии после подтверждения успеха. При ошибке копия должна оставаться доступной.
++- **Целая подстановка теряется на этапе перевода.** На строках 18 и 19 в сценарии, а также в golden, сохранены `[player_name]` и `[score]`. В `app/core/translate.py:39` вызывается `parse_emotion`, который удаляет неизвестный начальный тег в `app/core/tts/emotions.py:56`. В `app/core/translate.py:42` пустой результат даёт `ValueError("Translation is empty")`. Дополнительный прогон с настоящими `translate_line` и `translate_text`, подставными провайдером и TTS дал `partial` — **25/27**, обе ошибки привязаны к строкам 18 и 19. Это объясняет разницу с `done` в проверке с фиксированным переводом.
++
++## Результаты тестов
++
++```sh
++python -B -m pytest -q -p no:cacheprovider tests
++```
++
++**71 passed, 1 xfailed, 1 warning**. В новом модуле три проверки прошли, одна ожидаемо воспроизвела дефект очистки. Предупреждение Starlette о поддержке httpx относится к существующему HTTP-тесту. Запуск выполнен с исходниками только для чтения, приватным `/tmp` и изолированной сетью.
++
++## Ручная проверка в Ren’Py
++
++В SDK остаётся запустить копию проекта, выбрать по очереди оба маршрута меню и проверить отображение подстановок, тегов, кавычек и Unicode. Для реплики на строке 8 нужно прослушать исходный тон, заменённый файл и восстановленный оригинал. Автотесты проверяют файлы и их связь с отчётом. Оценка синхронизации звука с показом реплики, отображения глифов и качества настоящего перевода и речи требует отдельного прогона. SDK в этой сессии не устанавливался.

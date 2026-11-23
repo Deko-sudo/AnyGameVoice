@@ -1,0 +1,583 @@
+diff --git a/README.md b/README.md
+--- a/README.md
++++ b/README.md
+@@ -86,11 +86,32 @@
+ The manifest stays at `/x/y/.agv-manifests/<install_id>.json` after success so you can inspect the
+ record or repeat the uninstall.
+ 
++**Install in order A → B and uninstall in reverse order B → A.** Each installation
++backs up the versions it finds. Removing B first puts A's files back so A can
++then be removed safely.
++
+ Uninstall restores files whose current SHA-256 matches the installed version.
+-It lists changed files under `conflicts` and absent targets or backups under
+-`missing`. These entries, along with any available backups, stay available for
+-manual resolution. Exit code 0 indicates a clean result. Conflicts, missing
+-files, and restoration errors produce exit code 1.
++A `conflict` means the file changed after installation, often because another mod
++was installed over it or someone edited it by hand. The file stays in place.
++Check the saved manifest for the affected path and the corresponding backup under
++`.agv-backups/<install_id>/`. A recorded conflict stays in the manifest for
++manual resolution. If a backup is missing, recover the original from your game
++installation, distributor or another copy. You can remove the replacement
++manually when you intend to leave the file absent.
++
++If a process crashes, the next operation checks the lock and takes it over
++when it is stale. If recovery fails, confirm that no mod operation is running
++for the game before manually removing `.agv-manifests/.<game>.lock`.
++
++Use `agv manifests list` from the directory containing `.agv-manifests`, or pass
++`--game /x/y/game` from any directory to see the records for that game.
++`agv manifests prune --older-than 30d --dry-run` previews cleanup of fully
++uninstalled records at least 30 days old, using their creation dates. Without
++`--older-than`, prune selects completed records of any age. Active records and
++records with conflicts or missing files stay available for review.
++
++Uninstall exits with code 0 for a clean result. Conflicts, missing files, and
++restoration errors produce exit code 1.
+ 
+ For a single file, keep the backup path returned by `replace_audio` and pass
+ it with the same target to `uninstall_audio`.
+diff --git a/app/core/replacer/catalog.py b/app/core/replacer/catalog.py
+new file mode 100644
+--- /dev/null
++++ b/app/core/replacer/catalog.py
+@@ -0,0 +1,102 @@
++"""CLI commands for inspecting and pruning a directory of mod manifests."""
++
++import argparse
++import logging
++import re
++from collections import Counter
++from datetime import datetime, timedelta, timezone
++from pathlib import Path
++
++from .lock import game_lock
++from .manifest import ModManifest
++
++logger = logging.getLogger(__name__)
++
++
++def _read_record(path: Path) -> tuple[ModManifest, datetime] | None:
++    try:
++        if not path.is_file() or path.is_symlink():
++            return None
++        manifest = ModManifest.from_json(path)
++        stamp = manifest.created_at
++        if not isinstance(stamp, str):
++            raise ValueError("created_at requires an ISO 8601 timestamp")
++        created_at = datetime.fromisoformat(stamp[:-1] + "+00:00" if stamp.endswith("Z") else stamp)
++        if created_at.utcoffset() is None:
++            raise ValueError("created_at requires a timezone")
++        return manifest, created_at
++    except FileNotFoundError:
++        return None
++    except (OSError, ValueError) as exc:
++        logger.warning("Skipping unreadable manifest %s: %s", path, exc)
++        return None
++
++
++def _older_than(value: str) -> timedelta:
++    if not re.fullmatch(r"[0-9]+d", value):
++        raise argparse.ArgumentTypeError("use a number of days such as 30d")
++    try:
++        return timedelta(days=int(value[:-1]))
++    except (OverflowError, ValueError) as exc:
++        raise argparse.ArgumentTypeError("number of days is too large") from exc
++
++
++def _prunable(
++    path: Path, manifest: ModManifest, age: timedelta, older_than: timedelta | None,
++) -> bool:
++    game = Path(manifest.game_root).resolve()
++    return (
++        path.name == f"{manifest.install_id}.json"
++        and path.parent == game.parent / ".agv-manifests"
++        and (older_than is None or age >= older_than)
++        and bool(manifest.entries)
++        and all(entry.status == "uninstalled" for entry in manifest.entries)
++    )
++
++
++def manifests_command(argv: list[str], prog: str) -> None:
++    parser = argparse.ArgumentParser(prog=prog)
++    sub = parser.add_subparsers(dest="action", required=True)
++    list_parser, prune_parser = sub.add_parser("list"), sub.add_parser("prune")
++    for command in (list_parser, prune_parser):
++        command.add_argument("--game", type=Path, help="show or prune records for this game only")
++    prune_parser.add_argument("--older-than", type=_older_than, metavar="DAYS")
++    prune_parser.add_argument("--dry-run", action="store_true")
++    args = parser.parse_args(argv)
++    game = args.game.resolve() if args.game is not None else None
++    directory = (game.parent if game is not None else Path.cwd()) / ".agv-manifests"
++    if directory.is_symlink():
++        raise ValueError(f"Mod storage cannot be a symlink: {directory}")
++
++    now = datetime.now(timezone.utc)
++    rows = []
++    statuses = ("installed", "uninstalled", "conflict", "missing")
++    for path in sorted(directory.glob("*.json"), reverse=True):
++        record = _read_record(path)
++        if record is None:
++            continue
++        manifest, created_at = record
++        manifest_game = Path(manifest.game_root).resolve()
++        if game is not None and manifest_game != game:
++            continue
++        age = now - created_at
++        if args.action == "list":
++            counts = Counter(entry.status for entry in manifest.entries)
++            rows.append((manifest.install_id, manifest.created_at, manifest.game_root, len(manifest.entries),
++                         *(counts[status] for status in statuses), f"{max(0, age.days)}d"))
++        elif _prunable(path, manifest, age, args.older_than):
++            if args.dry_run:
++                print(f"Would remove {path}")
++                continue
++            with game_lock(manifest_game):
++                current = _read_record(path)
++                if current is not None:
++                    current_manifest, current_created_at = current
++                    if (Path(current_manifest.game_root).resolve() == manifest_game
++                            and _prunable(path, current_manifest, now - current_created_at, args.older_than)):
++                        path.unlink()
++                        print(f"Removed {path}")
++    if rows:
++        print("\t".join(("install_id", "created_at", "game_root", "total", *statuses, "age")))
++        for row in rows:
++            print("\t".join(map(str, row)))
+diff --git a/app/core/replacer/install.py b/app/core/replacer/install.py
+--- a/app/core/replacer/install.py
++++ b/app/core/replacer/install.py
+@@ -4,13 +4,13 @@
+ import logging
+ import secrets
+ import shutil
+-from contextlib import contextmanager
+ from datetime import datetime, timezone
+ from pathlib import Path
+-from tempfile import NamedTemporaryFile, TemporaryDirectory
++from tempfile import TemporaryDirectory
+ 
+ from .backup import _remove_backup, backup_file, restore_file
+-from .manifest import ManifestEntry, ModManifest, _relative_path, _utc_now
++from .lock import game_lock
++from .manifest import ManifestEntry, ModManifest, _atomic_write, _relative_path, _utc_now
+ 
+ __all__ = ["install_mod", "uninstall_mod"]
+ 
+@@ -38,34 +38,8 @@
+     return path
+ 
+ 
+-@contextmanager
+-def _game_lock(game: Path):
+-    if game == game.parent or game.name.lower() in (".agv-manifests", ".agv-backups"):
+-        raise ValueError(f"Invalid game directory: {game}")
+-    manifests = _storage(game.parent / ".agv-manifests")
+-    manifests.mkdir(mode=0o700, exist_ok=True)
+-    lock = manifests / f".{game.name}.lock"
+-    try:
+-        lock.mkdir(mode=0o700)
+-    except FileExistsError as exc:
+-        raise RuntimeError(f"Another mod operation holds the lock: {lock}") from exc
+-    try:
+-        yield manifests
+-    finally:
+-        lock.rmdir()
+-
+-
+ def _save_manifest(manifest: ModManifest, path: Path) -> None:
+-    payload = manifest.to_json()
+-    stream = NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent, delete=False)
+-    staged = Path(stream.name)
+-    try:
+-        with stream:
+-            stream.write(payload)
+-        staged.replace(path)
+-    except BaseException:
+-        staged.unlink(missing_ok=True)
+-        raise
++    _atomic_write(path, manifest.to_json())
+ 
+ 
+ def _replacement_paths(
+@@ -117,7 +91,7 @@
+         raise ValueError(f"Invalid game directory: {game}")
+     if not output.is_dir():
+         raise NotADirectoryError(output)
+-    with _game_lock(game) as manifests:
++    with game_lock(game) as manifests:
+         pairs = _replacement_paths(game, output, replacements)
+         now = datetime.now(timezone.utc)
+         install_id = f"{now:%Y%m%dT%H%M%S.%fZ}-{secrets.token_hex(3)}"
+@@ -191,7 +165,7 @@
+     path = Path(manifest_path).resolve()
+     game = Path(ModManifest.from_json(path).game_root).resolve()
+     report = dict(restored=0, conflicts=[], missing=[], already_uninstalled=0, errors=[])
+-    with _game_lock(game):
++    with game_lock(game):
+         manifest = ModManifest.from_json(path)
+         if Path(manifest.game_root).resolve() != game:
+             raise ValueError("Manifest game directory changed")
+diff --git a/app/core/replacer/lock.py b/app/core/replacer/lock.py
+new file mode 100644
+--- /dev/null
++++ b/app/core/replacer/lock.py
+@@ -0,0 +1,131 @@
++"""Recoverable, per-game locks for manifest operations."""
++
++import json
++import logging
++import os
++import socket
++from contextlib import contextmanager
++from datetime import datetime
++from pathlib import Path
++
++from .manifest import _atomic_write, _utc_now
++
++__all__ = ["game_lock", "lock_info"]
++
++logger = logging.getLogger(__name__)
++
++
++def lock_info(path: str | Path) -> dict | None:
++    """Read the owner of a lock. Return None for absent or malformed metadata."""
++    path = Path(path)
++    try:
++        if not path.is_file() or path.is_symlink():
++            return None
++        data = json.loads(path.read_text(encoding="utf-8"))
++        pid, started, host = data["pid"], data["started_at"], data["host"]
++        if type(pid) is not int or pid <= 0 or not isinstance(host, str) or not host:
++            return None
++        if not isinstance(started, str):
++            return None
++        timestamp = started[:-1] + "+00:00" if started.endswith("Z") else started
++        if datetime.fromisoformat(timestamp).utcoffset() is None:
++            return None
++    except (FileNotFoundError, KeyError, TypeError, ValueError):
++        return None
++    return data
++
++
++def _pid_alive(pid: int) -> bool:
++    if os.name != "nt":
++        try:
++            os.kill(pid, 0)
++        except (ProcessLookupError, OverflowError):
++            return False
++        except PermissionError:
++            return True
++        return True
++
++    import ctypes
++    from ctypes import wintypes
++
++    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
++    kernel.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
++    kernel.OpenProcess.restype = wintypes.HANDLE
++    kernel.WaitForSingleObject.argtypes = (wintypes.HANDLE, wintypes.DWORD)
++    kernel.WaitForSingleObject.restype = wintypes.DWORD
++    kernel.CloseHandle.argtypes = (wintypes.HANDLE,)
++    kernel.CloseHandle.restype = wintypes.BOOL
++    if pid > 0xFFFFFFFF:
++        return False
++    handle = kernel.OpenProcess(0x00100000, False, pid)  # SYNCHRONIZE
++    if not handle:
++        error = ctypes.get_last_error()
++        if error == 87:  # ERROR_INVALID_PARAMETER
++            return False
++        if error == 5:  # ERROR_ACCESS_DENIED
++            return True
++        raise ctypes.WinError(error)
++    try:
++        result = kernel.WaitForSingleObject(handle, 0)
++        if result == 0:  # WAIT_OBJECT_0, process exited
++            return False
++        if result == 258:  # WAIT_TIMEOUT, process still running
++            return True
++        raise ctypes.WinError(ctypes.get_last_error())
++    finally:
++        kernel.CloseHandle(handle)
++
++
++@contextmanager
++def _lock_metadata(directory: Path):
++    # Serialize check-and-replace and check-and-unlink across processes. The OS
++    # releases this short-lived lock on exit, so the guard file can stay in place.
++    with (directory / ".lock-guard").open("a+b") as guard:
++        if os.name == "nt":
++            import msvcrt
++
++            guard.seek(0)
++            msvcrt.locking(guard.fileno(), msvcrt.LK_LOCK, 1)
++            try:
++                yield
++            finally:
++                guard.seek(0)
++                msvcrt.locking(guard.fileno(), msvcrt.LK_UNLCK, 1)
++        else:
++            import fcntl
++
++            fcntl.flock(guard.fileno(), fcntl.LOCK_EX)
++            yield
++
++
++@contextmanager
++def game_lock(game: Path):
++    """Hold exclusive access to one game's manifest operations."""
++    if game == game.parent or game.name.lower() in (".agv-manifests", ".agv-backups"):
++        raise ValueError(f"Invalid game directory: {game}")
++    manifests = game.parent / ".agv-manifests"
++    if manifests.is_symlink():
++        raise ValueError(f"Mod storage cannot be a symlink: {manifests}")
++    manifests.mkdir(mode=0o700, exist_ok=True)
++    path = manifests / f".{game.name}.lock"
++    owner = {"pid": os.getpid(), "started_at": _utc_now(), "host": socket.gethostname()}
++    with _lock_metadata(manifests):
++        current = lock_info(path)
++        if current and current["host"] == owner["host"] and _pid_alive(current["pid"]):
++            raise RuntimeError(
++                f"install already running, pid={current['pid']}, started={current['started_at']}"
++            )
++        if path.exists() or path.is_symlink():
++            if current and current["host"] == owner["host"]:
++                logger.warning("Stale lock from dead process, taking over: %s", path)
++            else:
++                logger.warning("Stale lock from another host or invalid metadata, taking over: %s", path)
++            if path.is_dir() and not path.is_symlink():
++                path.rmdir()  # Empty lock directories from the earlier implementation.
++        _atomic_write(path, json.dumps(owner, ensure_ascii=False) + "\n")
++    try:
++        yield manifests
++    finally:
++        with _lock_metadata(manifests):
++            if owner["pid"] == os.getpid() and lock_info(path) == owner:
++                path.unlink(missing_ok=True)
+diff --git a/app/core/replacer/manifest.py b/app/core/replacer/manifest.py
+--- a/app/core/replacer/manifest.py
++++ b/app/core/replacer/manifest.py
+@@ -5,6 +5,19 @@
+ from dataclasses import asdict, dataclass
+ from datetime import datetime, timezone
+ from pathlib import Path, PurePosixPath, PureWindowsPath
++from tempfile import NamedTemporaryFile
++
++
++def _atomic_write(path: Path, payload: str) -> None:
++    stream = NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent, delete=False)
++    staged = Path(stream.name)
++    try:
++        with stream:
++            stream.write(payload)
++        staged.replace(path)
++    except BaseException:
++        staged.unlink(missing_ok=True)
++        raise
+ 
+ 
+ def _utc_now() -> str:
+diff --git a/app/main.py b/app/main.py
+--- a/app/main.py
++++ b/app/main.py
+@@ -237,6 +237,8 @@
+         print(f"    {prog} mod <game_folder> --out <dir> [--voice model.onnx] [--engine piper] [--emotion neutral] [--translate-to ru] [--workers 2]")
+         print(f"    {prog} install --game PATH --output PATH --map ORIG:GEN [--map ...]")
+         print(f"    {prog} uninstall --manifest PATH")
++        print(f"    {prog} manifests list [--game PATH]")
++        print(f"    {prog} manifests prune [--game PATH] [--older-than 30d] [--dry-run]")
+         print(f"    {prog} unpack <game_or_container> --out <dir> [--engine auto|unity|unreal]")
+         print(f"    {prog} translate \"text\" --to ru [--provider ollama]")
+         print(f"    {prog} ui [port]")
+@@ -305,6 +307,14 @@
+             print(json.dumps(report, ensure_ascii=False, indent=2))
+             if report["conflicts"] or report["missing"] or report["errors"]:
+                 raise SystemExit(1)
++    elif cmd == "manifests":
++        from app.core.replacer.catalog import manifests_command
++
++        try:
++            manifests_command(rest, f"{prog} manifests")
++        except (OSError, ValueError, RuntimeError) as exc:
++            print(f"manifests: {exc}", file=sys.stderr)
++            raise SystemExit(1) from exc
+     elif cmd == "unpack" and rest:
+         import argparse
+ 
+@@ -327,7 +337,7 @@
+         a = p.parse_args(rest)
+         cmd_translate(a.text, a.to, source=a.source, provider=a.provider)
+     else:
+-        print(f"Unknown command: {cmd}. Try: scan | extract | ui | config | mod | install | uninstall | unpack | translate")
++        print(f"Unknown command: {cmd}. Try: scan | extract | ui | config | mod | install | uninstall | manifests | unpack | translate")
+         sys.exit(2)
+ 
+ 
+diff --git a/tests/test_manifest.py b/tests/test_manifest.py
+--- a/tests/test_manifest.py
++++ b/tests/test_manifest.py
+@@ -1,12 +1,15 @@
+ """Manifest-based install and uninstall without any game or TTS runtime."""
+ 
+ import json
++import os
+ import re
+ import shutil
++import socket
+ import stat
+ import subprocess
+ import sys
+ from dataclasses import replace
++from datetime import datetime, timedelta, timezone
+ from hashlib import sha256
+ from pathlib import Path
+ 
+@@ -14,6 +17,7 @@
+ 
+ from app.core.replacer import install
+ from app.core.replacer.install import install_mod, uninstall_mod
++from app.core.replacer.lock import game_lock, lock_info
+ from app.core.replacer.manifest import ModManifest
+ 
+ 
+@@ -229,3 +233,139 @@
+                               capture_output=True, text=True, check=True)
+     assert json.loads(restored.stdout)["restored"] == 1
+     assert (game / pairs[0][0]).read_bytes() == b"manual edit"
++
++
++def test_stale_lock_from_crashed_process_is_taken_over(game_files, caplog):
++    game, pairs, output = game_files
++    child = subprocess.run(
++        [sys.executable, "-B", "-c",
++         "import os, sys; from pathlib import Path; from app.core.replacer.lock import game_lock\n"
++         "with game_lock(Path(sys.argv[1])): os._exit(19)", str(game)],
++        timeout=10, capture_output=True, text=True,
++    )
++    assert child.returncode == 19, child.stderr
++    path = game.parent / ".agv-manifests" / f".{game.name}.lock"
++    assert lock_info(path)["pid"] != os.getpid()
++    manifest, _ = install_mod(str(game), pairs, str(output))
++    assert Path(manifest).is_file()
++    assert not path.exists()
++    assert "Stale lock from dead process, taking over" in caplog.text
++
++
++def test_active_lock_reports_the_owner_and_keeps_the_lock(game_files):
++    game, _, _ = game_files
++    with game_lock(game) as directory:
++        path = directory / f".{game.name}.lock"
++        before = lock_info(path)
++        assert before["pid"] == os.getpid() and before["host"] == socket.gethostname()
++        with pytest.raises(RuntimeError, match=f"install already running, pid={os.getpid()}"):
++            with game_lock(game):
++                pytest.fail("a second owner acquired the active lock")
++        assert lock_info(path) == before
++    assert not path.exists()
++
++
++def test_invalid_and_foreign_locks_are_taken_over(game_files, caplog):
++    game, _, _ = game_files
++    directory = game.parent / ".agv-manifests"
++    directory.mkdir()
++    path = directory / f".{game.name}.lock"
++    foreign = {
++        "pid": os.getpid(), "started_at": "2026-11-23T09:00:00Z",
++        "host": socket.gethostname() + "-remote",
++    }
++    for payload in ("{broken", json.dumps(foreign), None):
++        caplog.clear()
++        if payload is None:
++            path.mkdir()  # Legacy directory lock.
++        else:
++            path.write_text(payload, encoding="utf-8")
++        with game_lock(game):
++            current = lock_info(path)
++            assert current["pid"] == os.getpid()
++            assert current["host"] == socket.gethostname()
++            assert "Stale lock" in caplog.text and "taking over" in caplog.text
++        assert not path.exists()
++
++
++def test_release_preserves_a_lock_written_by_another_pid(game_files):
++    game, _, _ = game_files
++    with game_lock(game) as directory:
++        path = directory / f".{game.name}.lock"
++        foreign = {**lock_info(path), "pid": os.getpid() + 1}
++        path.write_text(json.dumps(foreign), encoding="utf-8")
++    assert lock_info(path) == foreign
++
++
++def run_manifests(directory, *args):
++    cli = Path(__file__).resolve().parents[1] / "app" / "main.py"
++    return subprocess.run(
++        [sys.executable, "-B", str(cli), "manifests", *args],
++        cwd=directory, capture_output=True, text=True, check=True, timeout=10,
++    ).stdout
++
++
++def test_manifests_list_empty_directory(tmp_path):
++    (tmp_path / ".agv-manifests").mkdir()
++    assert run_manifests(tmp_path, "list") == ""
++
++
++def test_manifests_list_status_counts_and_game_filter(game_files, mod):
++    game, pairs, output = game_files
++    complete_path, complete, _ = mod
++    assert uninstall_mod(complete_path)["restored"] == 3
++    other_game = game.with_name("other game")
++    shutil.copytree(game, other_game)
++    _, active = install_mod(str(other_game), pairs, str(output))
++    rows = [line.split("\t") for line in run_manifests(game.parent, "list").splitlines()]
++    assert rows[0] == [
++        "install_id", "created_at", "game_root", "total", "installed", "uninstalled",
++        "conflict", "missing", "age",
++    ]
++    assert len(rows) == 3
++    counts = {row[0]: row[2:] for row in rows[1:]}
++    assert counts[complete.install_id] == [str(game), "3", "0", "3", "0", "0", "0d"]
++    assert counts[active.install_id] == [str(other_game), "3", "3", "0", "0", "0", "0d"]
++    filtered = run_manifests(output, "list", "--game", str(other_game)).splitlines()
++    assert len(filtered) == 2 and filtered[1].split("\t")[0] == active.install_id
++
++
++def test_manifests_prune_dry_run_preserves_the_record(game_files, mod):
++    game, _, _ = game_files
++    path, _, _ = mod
++    uninstall_mod(path)
++    before = Path(path).read_bytes()
++    assert run_manifests(game.parent, "prune", "--dry-run") == f"Would remove {path}\n"
++    assert Path(path).read_bytes() == before
++
++
++def test_manifests_prune_keeps_active_conflict_and_missing(game_files, mod):
++    game, pairs, output = game_files
++    completed, _, _ = mod
++    uninstall_mod(completed)
++    conflict, _ = install_mod(str(game), pairs, str(output))
++    (game / pairs[0][0]).write_bytes(b"manual change")
++    assert uninstall_mod(conflict)["conflicts"] == [pairs[0][0]]
++    missing, missing_manifest = install_mod(str(game), pairs, str(output))
++    missing_backup = game.parent / ".agv-backups" / missing_manifest.install_id
++    (missing_backup / missing_manifest.entries[0].backup).unlink()
++    assert uninstall_mod(missing)["missing"] == [pairs[0][0]]
++    active, _ = install_mod(str(game), pairs, str(output))
++
++    assert run_manifests(game.parent, "prune") == f"Removed {completed}\n"
++    assert not Path(completed).exists()
++    assert all(Path(path).is_file() for path in (active, conflict, missing))
++
++
++def test_manifests_prune_filters_by_created_at(game_files, mod):
++    game, pairs, output = game_files
++    old_path, _, _ = mod
++    uninstall_mod(old_path)
++    old = ModManifest.from_json(old_path)
++    old.created_at = (datetime.now(timezone.utc) - timedelta(days=31)).isoformat()
++    Path(old_path).write_text(old.to_json(), encoding="utf-8")
++    recent_path, _ = install_mod(str(game), pairs, str(output))
++    uninstall_mod(recent_path)
++
++    assert run_manifests(game.parent, "prune", "--older-than", "30d") == f"Removed {old_path}\n"
++    assert not Path(old_path).exists() and Path(recent_path).is_file()

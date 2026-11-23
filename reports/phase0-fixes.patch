@@ -1,0 +1,488 @@
+diff --git a/README.md b/README.md
+--- a/README.md
++++ b/README.md
+@@ -66,6 +66,28 @@
+ 3. Choose voices for characters
+ 4. Batch-generate wavs + subtitles
+ 5. Install into the game with automatic backups
++
++### Uninstalling a mod
++
++Keep the backup path returned by `replace_audio` for each file you install.
++Pass that path and the same target to `uninstall_audio` when removing the mod.
++
++```python
++from app.core.replacer.audio_replacer import replace_audio, uninstall_audio
++
++target = "game/voice/beacon.wav"
++backup = replace_audio(target, "output/0000_e.wav")
++# Later, restore the original clip.
++restored = uninstall_audio(target, backup)
++```
++
++`True` means the original was restored and the backup removed. On failure,
++the function returns `False` and logs the reason. A failed copy leaves the
++backup available for a retry. Calling the lower-level `restore_file(backup)`
++again after success raises `FileNotFoundError`.
++
++Uninstall currently operates on one file per call. Manifest-based uninstall
++for an entire mod is planned for Phase 1.
+ 
+ ### Job status
+ 
+diff --git a/app/core/replacer/audio_replacer.py b/app/core/replacer/audio_replacer.py
+--- a/app/core/replacer/audio_replacer.py
++++ b/app/core/replacer/audio_replacer.py
+@@ -3,12 +3,16 @@
+ Replaces a game audio file with generated audio, keeping a backup.
+ """
+ 
++import logging
+ import os
+ import shutil
++from pathlib import Path
+ 
+-from .backup import backup_file
++from .backup import _original_path, backup_file, restore_file
+ 
+-__all__ = ["replace_audio"]
++__all__ = ["replace_audio", "uninstall_audio"]
++
++logger = logging.getLogger(__name__)
+ 
+ AUDIO_SUFFIXES = {".wav", ".ogg", ".mp3"}
+ 
+@@ -28,3 +32,17 @@
+     backup = backup_file(target) if make_backup else ""
+     shutil.copy2(source, target)
+     return backup
++
++
++def uninstall_audio(target: str, backup: str) -> bool:
++    """Restore one target from its replace_audio backup. Log failures and return False."""
++    try:
++        if not backup or not os.path.isfile(backup):
++            raise FileNotFoundError(f"Backup not found: {backup}")
++        if not target or Path(target).resolve() != Path(_original_path(backup)).resolve():
++            raise ValueError("Backup belongs to a different target")
++        restore_file(backup)
++    except Exception as exc:  # This entry point reports restore failures through its boolean result.
++        logger.error("Could not uninstall audio %s using %s: %s", target, backup, exc)
++        return False
++    return True
+diff --git a/app/core/replacer/backup.py b/app/core/replacer/backup.py
+--- a/app/core/replacer/backup.py
++++ b/app/core/replacer/backup.py
+@@ -5,6 +5,7 @@
+ """
+ 
+ import os
++import re
+ import shutil
+ import time
+ 
+@@ -21,18 +22,25 @@
+     return backup
+ 
+ 
++def _original_path(backup: str) -> str:
++    name = os.fspath(backup)
++    if name.endswith(".bak"):
++        return re.sub(r"\.\d{8}-\d{6}$", "", name[:-4])
++    return name.rsplit(".bak", 1)[0].rsplit(".", 1)[0]
++
++
+ def restore_file(backup: str, original: str = "") -> str:
+-    """Restore a backup over the original. Returns original path."""
++    """Restore the original, then remove its backup. A missing backup raises FileNotFoundError."""
+     if not backup or not os.path.isfile(backup):
+         raise FileNotFoundError(f"Backup not found: {backup}")
+-    target = original or backup.rsplit(".bak", 1)[0].rsplit(".", 1)[0]
+-    # backup format is "<orig>.<stamp>.bak" -> strip last two suffixes
+-    if backup.endswith(".bak"):
+-        base = backup[: -len(".bak")]
+-        # remove .YYYYmmdd-HHMMSS
+-        import re
+-
+-        base = re.sub(r"\.\d{8}-\d{6}$", "", base)
+-        target = original or base
++    target = original or _original_path(backup)
++    if os.path.isdir(target):
++        raise IsADirectoryError(target)
++    if os.path.exists(target) and os.path.samefile(backup, target):
++        raise shutil.SameFileError(f"Backup and target are the same file: {target}")
+     shutil.copy2(backup, target)
++    try:
++        os.unlink(backup)
++    except FileNotFoundError:
++        pass
+     return target
+diff --git a/app/core/tts/emotions.py b/app/core/tts/emotions.py
+--- a/app/core/tts/emotions.py
++++ b/app/core/tts/emotions.py
+@@ -9,7 +9,8 @@
+ - xtts/silero: tags stripped (no emotion backend), text stays clean so
+   the model never reads "[happy]" aloud.
+ 
+-Unknown tags are stripped and treated as neutral — never synthesized.
++Only names in EMOTIONS are emotion tags. Other bracketed text can contain
++Ren'Py substitutions or engine-specific markers and is preserved.
+ """
+ 
+ import re
+@@ -38,32 +39,27 @@
+ # Markers bark understands natively — never stripped for bark.
+ BARK_MARKERS = {"laughs", "sighs", "gasps", "coughs", "uh", "um", "music"}
+ 
+-_LEAD_TAG = re.compile(r"^\s*(?:\[(\w+)\]|<emotion\s*=\s*[\"'](\w+)[\"']\s*>)\s*", re.IGNORECASE)
+-_ANY_TAG = re.compile(r"\[\w+\]|<emotion\s*=\s*[\"']\w+[\"']\s*>", re.IGNORECASE)
++_TAG = re.compile(r"\[(\w+)\]|<emotion\s*=\s*[\"'](\w+)[\"']\s*>", re.IGNORECASE)
+ 
+ 
+ def parse_emotion(text: str) -> tuple:
+     """Split leading emotion tag. Returns (emotion, clean_text)."""
+-    m = _LEAD_TAG.match(text or "")
+-    if not m:
+-        return "neutral", (text or "").strip()
+-    tag = (m.group(1) or m.group(2) or "").lower()
+-    rest = text[m.end():].strip()
+-    if tag in EMOTIONS:
+-        return tag, rest
+-    if tag in BARK_MARKERS:
+-        return "neutral", text.strip()  # bark-native marker, keep in text
+-    return "neutral", rest  # unknown tag: drop it, never synthesize
++    text = (text or "").strip()
++    m = _TAG.match(text)
++    if m:
++        tag = (m.group(1) or m.group(2)).lower()
++        if tag in EMOTIONS:
++            return tag, text[m.end():].lstrip()
++    return "neutral", text
+ 
+ 
+ def strip_emotion_tags(text: str, keep_markers: frozenset = frozenset()) -> str:
+     """Remove our [tag]/<emotion> markers; keep listed bark-native ones."""
+     def _drop(m):
+-        inner = m.group(0).strip("[]<>")
+-        word = inner.split("=")[-1].strip("\"' ").lower()
+-        return m.group(0) if word in keep_markers else ""
++        tag = (m.group(1) or m.group(2)).lower()
++        return "" if tag in EMOTIONS and tag not in keep_markers else m.group(0)
+ 
+-    return _ANY_TAG.sub(_drop, text or "").strip()
++    return _TAG.sub(_drop, text or "").strip()
+ 
+ 
+ def piper_flags(emotion: str) -> list:
+diff --git a/reports/phase0.md b/reports/phase0.md
+--- a/reports/phase0.md
++++ b/reports/phase0.md
+@@ -1,6 +1,8 @@
+ # Фаза 0. Эталонный проект Ren’Py
+ 
+-**Готовность Фазы 0 — нет по критерию чистого снятия мода.** Набор готов для регрессионных проверок на `862afd9`. Из 29 реплик извлекаются 27. Установка заменяет WAV, восстановление возвращает исходные байты. После восстановления рядом с WAV остаётся один файл `.bak`.
++## Phase 0 status: closed
++
++**Фаза 0 закрыта.** Все три находки исправлены. Из 29 реплик извлекаются 27, все 27 проходят перевод и генерацию тестового WAV. Установка и снятие мода на копии игры возвращают исходные байты и очищают использованную резервную копию. [Отчёт об исправлениях](phase0-fixes.md)
+ 
+ ## Созданные файлы
+ 
+@@ -32,16 +34,16 @@
+ 
+ ## Генерация, установка и снятие
+ 
+-1. На копии игры в `tmp_path` вызван `cmd_mod(..., translate_to="es")`. Подмена `translate_text` возвращает фиксированное «Prueba de voz.» для любой строки. Подмена `generate_voice_to_file` проверяет язык и текст и пишет валидный PCM, период которого зависит от номера строки сценария.
++1. На копии игры вызван `cmd_mod(..., translate_to="es")` со штатными `translate_line` и `translate_text`. Подставной ответ модели возвращает подстановки целиком. Тестовый синтезатор проверяет полученный текст и пишет валидный PCM, период которого зависит от номера строки сценария.
+ 2. Отчёт на диске совпал с возвращённым результатом — `done`, `total=27`, `succeeded=27`, `failed=0`. Для каждой реплики проверены координаты, спикер, имя опубликованного WAV, формат, число кадров и фактическая длина данных.
+ 3. Команда `voice` на строке 7 связывает `game/voice/beacon.wav` с репликой на строке 8. Тест берёт соответствующий WAV из отчёта, вызывает `replace_audio` и сравнивает байты. Резервная копия содержит оригинал, а файл игры после установки содержит сгенерированный звук.
+-4. `restore_file(backup)` восстанавливает правильный путь и исходное содержимое байт в байт. Отдельная проверка отсутствия `.bak` после снятия воспроизводит описанное ниже ограничение.
++4. `uninstall_audio(target, backup)` вернул `True`. Оригинальный WAV восстановлен байт в байт. После успешного снятия в копии игры осталось ноль файлов `.bak`.
+ 
+-## Found, not fixed
++## Fixed in this session
+ 
+-- **Снятие оставляет резервную копию.** В `app/core/replacer/backup.py:37` выполняется копирование в целевой файл, затем функция возвращает путь. После успешного восстановления остаётся `game/voice/beacon.wav.<timestamp>.bak`. Проверка очистки помечена `xfail(strict=True)`. После исправления неожиданный успех сделает её видимой до снятия метки. Запуск с `--runxfail` подтвердил ровно один остаточный файл.
+-- **Found: нет функции отката в самом `audio_replacer.py`.** Модуль экспортирует только `replace_audio` (`app/core/replacer/audio_replacer.py:11`). Для отдельного файла уже доступна `restore_file` из соседнего `backup.py:24`. Для чистого снятия нужен вызов восстановления с удалением использованной копии после подтверждения успеха. При ошибке копия должна оставаться доступной.
+-- **Целая подстановка теряется на этапе перевода.** На строках 18 и 19 в сценарии, а также в golden, сохранены `[player_name]` и `[score]`. В `app/core/translate.py:39` вызывается `parse_emotion`, который удаляет неизвестный начальный тег в `app/core/tts/emotions.py:56`. В `app/core/translate.py:42` пустой результат даёт `ValueError("Translation is empty")`. Дополнительный прогон с настоящими `translate_line` и `translate_text`, подставными провайдером и TTS дал `partial` — **25/27**, обе ошибки привязаны к строкам 18 и 19. Это объясняет разницу с `done` в проверке с фиксированным переводом.
++- **Подстановки.** Разбор эмоций и очистка текста используют имена из `EMOTIONS`. На строках 18 и 19 до TTS дошли ровно `[player_name]` и `[score]`. Отдельный тест проверяет путь от Ren’Py-тега `{b}[player_name]{/b}` через извлечение к разбору эмоции.
++- **Резервные копии.** `restore_file` удаляет использованный файл после успешного копирования. При сбое копирования резервная копия сохраняется. Повторный вызов с уже удалённой копией выдаёт `FileNotFoundError`.
++- **Снятие мода.** Публичная функция `uninstall_audio` принимает целевой файл и путь к его резервной копии. Ошибка даёт результат `False` и запись в журнале. В README добавлен пример установки и снятия одного файла.
+ 
+ ## Результаты тестов
+ 
+@@ -49,8 +51,9 @@
+ python -B -m pytest -q -p no:cacheprovider tests
+ ```
+ 
+-**71 passed, 1 xfailed, 1 warning**. В новом модуле три проверки прошли, одна ожидаемо воспроизвела дефект очистки. Предупреждение Starlette о поддержке httpx относится к существующему HTTP-тесту. Запуск выполнен с исходниками только для чтения, приватным `/tmp` и изолированной сетью.
++**78 passed, 1 warning**, без xfail. Все четыре проверки эталонного проекта прошли. Предупреждение Starlette о поддержке httpx относится к существующему HTTP-тесту. Исходники на время тестов доступны только для чтения, временные файлы создаются в приватном `/tmp`, сеть изолирована.
+ 
+-## Ручная проверка в Ren’Py
++## Known limitations
+ 
+-В SDK остаётся запустить копию проекта, выбрать по очереди оба маршрута меню и проверить отображение подстановок, тегов, кавычек и Unicode. Для реплики на строке 8 нужно прослушать исходный тон, заменённый файл и восстановленный оригинал. Автотесты проверяют файлы и их связь с отчётом. Оценка синхронизации звука с показом реплики, отображения глифов и качества настоящего перевода и речи требует отдельного прогона. SDK в этой сессии не устанавливался.
++- `uninstall_audio` работает с одним файлом за вызов. Снятие целого мода по манифесту запланировано на Фазу 1.
++- Запуск проекта в Ren’Py SDK остаётся ручной проверкой. Нужно пройти обе ветки, проверить отображение тегов, подстановок и Unicode и прослушать исходный, заменённый и восстановленный звук на строке 8. Автоматические тесты используют локальные подстановки для модели и TTS.
+diff --git a/tests/test_emotions.py b/tests/test_emotions.py
+--- a/tests/test_emotions.py
++++ b/tests/test_emotions.py
+@@ -7,10 +7,24 @@
+     assert parse_emotion("[happy] Hello!") == ("happy", "Hello!")
+     assert parse_emotion('<emotion="sad">Rain.') == ("sad", "Rain.")
+     assert parse_emotion("Plain line.") == ("neutral", "Plain line.")
+-    emo, clean = parse_emotion("[dragon] Rawr")
+-    assert emo == "neutral" and clean == "Rawr"  # unknown tag dropped, never read aloud
++    assert parse_emotion("[dragon] Rawr") == ("neutral", "[dragon] Rawr")
++    assert parse_emotion("[player_name]") == ("neutral", "[player_name]")
++    assert parse_emotion("[score] points") == ("neutral", "[score] points")
+     emo, clean = parse_emotion("[laughs] Ha ha")
+     assert emo == "neutral" and "[laughs]" in clean  # bark-native marker kept
++
++
++def test_substitution_inside_renpy_tag_survives_emotion_processing(tmp_path):
++    from app.core.game_detector.engines.renpy import extract_renpy_file
++    from app.core.tts.emotions import apply_emotion, parse_emotion
++
++    script = tmp_path / "script.rpy"
++    script.write_text('e "{b}[player_name]{/b}"\n', encoding="utf-8")
++    line, = extract_renpy_file(str(script))
++    assert parse_emotion(line.source_text) == ("neutral", "[player_name]")
++    for engine in ("piper", "bark", "xtts", "silero"):
++        text, _ = apply_emotion(engine, "[happy] [player_name] has [score] points")
++        assert text == "[player_name] has [score] points"
+ 
+ 
+ def test_piper_flags():
+diff --git a/tests/test_renpy_reference.py b/tests/test_renpy_reference.py
+--- a/tests/test_renpy_reference.py
++++ b/tests/test_renpy_reference.py
+@@ -9,12 +9,11 @@
+ 
+ import pytest
+ 
+-from app.core import translate
+ from app.core.extractor.dialogue_extractor import extract_dialogue
+-from app.core.replacer.audio_replacer import replace_audio
+-from app.core.replacer.backup import restore_file
++from app.core.replacer.audio_replacer import replace_audio, uninstall_audio
+ from app.core.tts import generator
+ from app.main import cmd_mod
++from app.providers.ollama_provider import OllamaProvider
+ 
+ REFERENCE = Path(__file__).parent / "fixtures" / "renpy_reference"
+ BEACON = Path("game/voice/beacon.wav")
+@@ -54,13 +53,15 @@
+     game = shutil.copytree(REFERENCE, tmp_path / "reference")
+     output = tmp_path / "output"
+ 
+-    def fake_translate(text, target, *args):
+-        assert target == "es"
+-        # A fixed utterance also lets placeholder-only lines exercise WAV generation.
+-        return "Prueba de voz."
++    placeholders = {18: "[player_name]", 19: "[score]"}
++
++    def fake_completion(self, prompt, system=""):
++        source = prompt.splitlines()[-1]
++        return source if source in placeholders.values() else "Prueba de voz."
+ 
+     def fake_tts(line, out_path, **kwargs):
+-        assert (line.target_lang, line.tts_text) == ("es", "Prueba de voz.")
++        assert line.target_lang == "es"
++        assert line.tts_text == placeholders.get(line.line_no, "Prueba de voz.")
+         # Encode the source line number in the period of a short PCM square wave.
+         period = b"\x00\x10" * line.line_no + b"\x00\xf0" * line.line_no
+         with wave.open(out_path, "wb") as wav:
+@@ -68,7 +69,7 @@
+             wav.writeframes(period * 32)
+         return out_path
+ 
+-    monkeypatch.setattr(translate, "translate_text", fake_translate)
++    monkeypatch.setattr(OllamaProvider, "complete", fake_completion)
+     monkeypatch.setattr(generator, "generate_voice_to_file", fake_tts)
+     report = cmd_mod(str(game), str(output), translate_to="es")
+     saved = json.loads((output / "report.json").read_text(encoding="utf-8"))
+@@ -108,8 +109,7 @@
+     assert list(game.rglob("*.bak")) == [backup]
+     assert backup.parent == target.parent and backup.read_bytes() == original
+     assert target.read_bytes() == generated.read_bytes()
+-    assert Path(restore_file(str(backup))) == target
+-    assert set(game.rglob("*.bak")) <= {backup}
++    assert uninstall_audio(str(target), str(backup)) is True
+     return game
+ 
+ 
+@@ -117,6 +117,5 @@
+     assert (restored_game / BEACON).read_bytes() == (REFERENCE / BEACON).read_bytes()
+ 
+ 
+-@pytest.mark.xfail(strict=True, raises=AssertionError, reason="restore_file keeps the consumed .bak")
+ def test_reference_restore_leaves_no_backups(restored_game):
+     assert list(restored_game.rglob("*.bak")) == []
+diff --git a/tests/test_replacer.py b/tests/test_replacer.py
+--- a/tests/test_replacer.py
++++ b/tests/test_replacer.py
+@@ -1,11 +1,16 @@
+ """Replacer tests."""
+ 
+ import os
++import shutil
++from pathlib import Path
++
++import pytest
++
++from app.core.replacer.audio_replacer import replace_audio, uninstall_audio
++from app.core.replacer.backup import backup_file, restore_file
+ 
+ 
+ def test_backup_and_restore(tmp_path):
+-    from app.core.replacer.backup import backup_file, restore_file
+-
+     f = tmp_path / "sfx.wav"
+     f.write_bytes(b"original")
+     bak = backup_file(str(f))
+@@ -13,21 +18,86 @@
+     assert os.path.isfile(bak)
+     f.write_bytes(b"modified")
+     restored = restore_file(bak)
+-    assert open(restored, "rb").read() == b"original"
++    assert Path(restored) == f and f.read_bytes() == b"original"
++    assert not Path(bak).exists()
++    with pytest.raises(FileNotFoundError, match="Backup not found"):
++        restore_file(bak)
+ 
+ 
+-def test_replace_audio(tmp_path):
+-    from app.core.replacer.audio_replacer import replace_audio
++def test_restore_copy_error_keeps_backup(tmp_path, monkeypatch, caplog):
++    target = tmp_path / "voice.wav"
++    target.write_bytes(b"original")
++    backup = Path(backup_file(str(target)))
++    target.write_bytes(b"mod")
+ 
++    def copy_error(src, dst):
++        raise OSError("copy failed")
++
++    monkeypatch.setattr(shutil, "copy2", copy_error)
++    with pytest.raises(OSError, match="copy failed"):
++        restore_file(str(backup))
++    assert uninstall_audio(str(target), str(backup)) is False
++    assert "copy failed" in caplog.text
++    assert backup.read_bytes() == b"original"
++
++
++def test_restore_refuses_same_file(tmp_path):
++    backup = tmp_path / "voice.wav.bak"
++    backup.write_bytes(b"only copy")
++    alias = tmp_path / "voice.wav"
++    alias.hardlink_to(backup)
++    for target in (backup, alias):
++        with pytest.raises(shutil.SameFileError):
++            restore_file(str(backup), original=str(target))
++        assert backup.read_bytes() == b"only copy"
++
++
++def test_restore_accepts_already_removed_backup(tmp_path, monkeypatch):
++    target = tmp_path / "voice.wav"
++    target.write_bytes(b"original")
++    backup = backup_file(str(target))
++    target.write_bytes(b"mod")
++    unlink = os.unlink
++
++    def concurrent_unlink(path):
++        unlink(path)
++        raise FileNotFoundError(path)
++
++    monkeypatch.setattr(os, "unlink", concurrent_unlink)
++    assert restore_file(backup) == str(target)
++    assert target.read_bytes() == b"original" and not Path(backup).exists()
++
++
++def test_replace_and_uninstall_audio(tmp_path):
+     target = tmp_path / "voice.wav"
+     target.write_bytes(b"game-audio")
+     src = tmp_path / "gen.wav"
+     src.write_bytes(b"ai-audio")
+     bak = replace_audio(str(target), str(src))
+     assert bak.endswith(".bak")
+-    assert open(str(target), "rb").read() == b"ai-audio"
+-    # restore works
+-    from app.core.replacer.backup import restore_file
++    assert target.read_bytes() == b"ai-audio"
++    assert uninstall_audio(str(target), bak) is True
++    assert target.read_bytes() == b"game-audio"
++    assert not Path(bak).exists()
+ 
+-    restore_file(bak)
+-    assert open(str(target), "rb").read() == b"game-audio"
++
++def test_uninstall_missing_backup(tmp_path, caplog):
++    target = tmp_path / "voice.wav"
++    target.write_bytes(b"mod")
++    backup = str(target) + ".bak"
++    assert uninstall_audio(str(target), backup) is False
++    assert target.read_bytes() == b"mod"
++    assert "Backup not found" in caplog.text and backup in caplog.text
++
++
++def test_uninstall_rejects_another_targets_backup(tmp_path, caplog):
++    first = tmp_path / "first.wav"
++    first.write_bytes(b"original")
++    backup = backup_file(str(first))
++    first.write_bytes(b"mod")
++    second = tmp_path / "second.wav"
++    second.write_bytes(b"other")
++    assert uninstall_audio(str(second), backup) is False
++    assert "different target" in caplog.text
++    assert second.read_bytes() == b"other" and first.read_bytes() == b"mod"
++    assert Path(backup).read_bytes() == b"original"
+diff --git a/reports/phase0-fixes.md b/reports/phase0-fixes.md
+new file mode 100644
+--- /dev/null
++++ b/reports/phase0-fixes.md
+@@ -0,0 +1,46 @@
++# Фаза 0 — исправления
++
++**Готовность Фазы 0 — да.** На эталонной сцене перевод и генерация завершаются с `done` и 27 WAV. После снятия файла исходный WAV восстановлен побайтно, в каталоге игры осталось ноль `.bak`.
++
++## Три исправления
++
++1. **Эмоции и подстановки.** Разбор начального тега и очистка текста для TTS используют имена из существующего словаря `EMOTIONS` — `neutral`, `happy`, `sad`, `angry`, `whisper` и `shouting`. Неизвестные имена в квадратных скобках сохраняются. Проверены отдельная подстановка, подстановка с последующим текстом и извлечение `{b}[player_name]{/b}` из сценария.
++2. **Восстановление.** После успешного `shutil.copy2` функция `restore_file` удаляет использованную копию через `os.unlink`. Если файл уже исчез на этапе удаления, восстановление завершается успешно. При ошибке копирования backup сохраняется. Два пути к одному файлу, в том числе жёсткие ссылки, дают `SameFileError`. Новый вызов после успешного восстановления даёт `FileNotFoundError`.
++3. **Снятие одного файла.** Экспортированная `uninstall_audio(target, backup)` проверяет, что копия относится к цели, и вызывает `restore_file(backup)`. Успех возвращает `True`, ошибка возвращает `False` с записью причины в журнал. Проверены корректная пара, отсутствующий backup, чужой backup и сбой копирования. Пример вызова добавлен в README, в раздел «Uninstalling a mod».
++
++## Эталонная сцена
++
++На обоих снимках выполнен одинаковый вызов `cmd_mod(..., translate_to="es")` со штатными `translate_line` и `translate_text`. Ответ `OllamaProvider.complete` и тестовый синтезатор PCM заменяли внешние модели. Сохранённый `report.json` совпал с результатом функции. До исправлений получалось `partial`, 25/27. После исправлений — `done`, 27/27, ошибок 0.
++
++| Строка `game/script.rpy` | До | После | Текст на входе TTS | WAV |
++|---|---|---|---|---|
++| 18, `s` | `Translation failed: Translation is empty` | `succeeded` | `[player_name]` | `0009_s.wav` |
++| 19, `e` | `Translation failed: Translation is empty` | `succeeded` | `[score]` | `0010_e.wav` |
++
++## Полный прогон
++
++Команда на обоих снимках — `python -B -m pytest -q -p no:cacheprovider tests`. Файлы проекта доступны только для чтения, временное хранилище и сеть изолированы.
++
++| Снимок | Результат |
++|---|---|
++| До исправлений | `71 passed, 1 xfailed, 1 warning` |
++| После исправлений | `78 passed, 1 warning` |
++
++Проверка очистки `test_reference_restore_leaves_no_backups` прошла как обычный тест. Единственное предупреждение связано с поддержкой httpx в Starlette TestClient в существующем HTTP-тесте. Снятие целого мода по манифесту относится к Фазе 1. Проверка воспроизведения в Ren’Py SDK остаётся ручной.
++
++## SHA-256 изменённых файлов
++
++База — `862afd9` с наложенным `reports/phase0.patch`. В таблице приведены все существовавшие файлы, чьи байты изменились. В этой сессии созданы этот отчёт и `reports/phase0-fixes.patch`.
++
++| Файл | До | После |
++|---|---|---|
++| `README.md` | `fff19fda2edb7a896ce2318f17ce43e814ceeb9a91f67e024d88563709479c2e` | `04808e5f68efc4c43241a0fed47dd0714da15fb25c16bc762d72307d33b82f69` |
++| `app/core/replacer/audio_replacer.py` | `94ff7c161a88bd905f31c422cebd41caac35b01b85c9df2594dcb5adda86df93` | `7e18bf16a75d56be55a78f4a68d9cb3724e2a1bc6fa9485b0547e082968c4dc3` |
++| `app/core/replacer/backup.py` | `be4de2c838f1cacfbd255242896ad0a7a26b1c3a5f60366a085effb5b7338a6a` | `73a4f7dfa739dd5ec4dc900d29a2e1a8e668f2cff1bf3538d33c8b175b422b6b` |
++| `app/core/tts/emotions.py` | `cfb88b1d176a10864ee333932e5ee7c9aca8ddd0908e5530078818bacc61e217` | `2f764c0ad7eccd10cdd94f097ce18ab33ffb92e528ad98b63f67920f10189cce` |
++| `reports/phase0.md` | `d2a8b598c6b672929314b2878acacb3c5fa75cc2cf24c4b08a269268919970de` | `8d229c3613cb6ca09de8f9e464b11e40d832f20040a2551f0a684f62214bcd37` |
++| `tests/test_emotions.py` | `4fad0664ea6972f3287568334b67d7dc14f6a0aa48ca9ef05f9587d73353f867` | `7f6117223fa570c8120073a97fc234e347908f49a269533d7eb852c3cc514e37` |
++| `tests/test_renpy_reference.py` | `e8f57dfbd0693358ea8f64e80936953a8e785328b6b7fa88a6751d2b79248a2d` | `bb284d0394658f2b2dbc81b255da531cc157a9613a97dec9810de867db3ad720` |
++| `tests/test_replacer.py` | `63f83d51f4886d533e27aa6d59879cb061498f30fe49585274badbecb22ecbc7` | `fc70f920b431184f17937a7d74d76e54d6336272a84ccfcbca50256da64218fb` |
++
++[Статус Фазы 0](phase0.md) · [Дифф поверх эталонного набора](phase0-fixes.patch)

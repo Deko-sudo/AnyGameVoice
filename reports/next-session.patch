@@ -1,0 +1,514 @@
+diff --git a/README.md b/README.md
+--- a/README.md
++++ b/README.md
+@@ -67,6 +67,39 @@
+ 4. Batch-generate wavs + subtitles
+ 5. Install into the game with automatic backups
+ 
++### Job status
++
++The web UI shows the result of each batch with its succeeded/total and failed/total counts.
++
++| Status | Meaning |
++|--------|---------|
++| `done` | Every extracted line produced a WAV. |
++| `partial` | At least one line produced a WAV and at least one failed. Successful WAVs and their subtitles are available. |
++| `failed` | No line succeeded, no dialogue was found, or the job ended with a batch-level error. |
++
++### Batch report
++
++Each completed batch writes `report.json` in the output directory chosen with
++`--out` or the web UI, alongside the WAVs and `dialogue.srt`. The UI reads the
++same result from `GET /api/mod/{job_id}`.
++
++| Field | Contents |
++|-------|----------|
++| `status`, `error` | Final job status and a summary of any failures. |
++| `total`, `succeeded`, `failed` | Extracted lines, WAVs produced, and lines that failed. |
++| `lines` | One entry per extracted line, in source order, with a zero-based `index`, `source_file`, `line_no`, `speaker`, and per-line `status`. |
++| `lines[].wav` | Output filename for a `succeeded` line. |
++| `lines[].skipped_reason` | Failure reason for a `failed` line, or `null` on success. |
++
++Once all lines have been submitted, workers share a 60-second deadline to
++finish the queue. Any unfinished line counts as failed with the reason
++`TTS timed out`. Only successful lines appear in the subtitles.
++
++### Translation and voice limitations
++
++- To preserve a manual translation, set `manual_override`, provide `translated_text`, and set the line's `target_lang` to the requested language. An empty `target_lang` causes the batch to translate the line again when a target is requested.
++- A character's assigned `line.voice_id` takes precedence over CLI `--voice`. The CLI voice applies to lines without an assigned voice.
++
+ ## 🖥️ Hardware Requirements
+ 
+ | Component | Minimum | Recommended | Ideal |
+diff --git a/app/core/queue/task_queue.py b/app/core/queue/task_queue.py
+--- a/app/core/queue/task_queue.py
++++ b/app/core/queue/task_queue.py
+@@ -23,6 +23,7 @@
+     RUNNING = "running"
+     DONE = "done"
+     FAILED = "failed"
++    TIMEOUT = "timeout"
+ 
+ 
+ class TaskQueue:
+@@ -33,7 +34,8 @@
+         self._counter = itertools.count()
+         self._tasks: dict = {}
+         self._lock = threading.Lock()
+-        self._stop = threading.Event()
++        self._closed = False
++        self._deadline: float | None = None
+         self._threads = [
+             threading.Thread(target=self._worker, daemon=True, name=f"agv-worker-{i}")
+             for i in range(max(1, workers))
+@@ -43,8 +45,10 @@
+ 
+     def submit(self, func, *args, priority: Priority = Priority.NORMAL, name: str = "", **kwargs) -> int:
+         """Queue a callable. Returns task id."""
+-        task_id = next(self._counter)
+         with self._lock:
++            if self._closed:
++                raise RuntimeError("Task queue has been shut down")
++            task_id = next(self._counter)
+             self._tasks[task_id] = {
+                 "id": task_id,
+                 "name": name or getattr(func, "__name__", str(task_id)),
+@@ -54,34 +58,36 @@
+                 "error": None,
+                 "enqueued_at": time.time(),
+             }
+-        # PriorityQueue is a min-heap: negate priority so HIGH runs first
+-        self._pq.put((-int(priority), task_id, func, args, kwargs))
++            # PriorityQueue is a min-heap: negate priority so HIGH runs first.
++            self._pq.put((-int(priority), task_id, func, args, kwargs))
+         return task_id
+ 
+     def _worker(self) -> None:
+-        while not self._stop.is_set():
+-            try:
+-                _neg, task_id, func, args, kwargs = self._pq.get(timeout=0.1)
+-            except queue.Empty:
+-                continue
++        while True:
++            _neg, task_id, func, args, kwargs = self._pq.get()
++            if task_id == -1:
++                self._pq.task_done()
++                return
+             with self._lock:
+-                task = self._tasks.get(task_id)
+-                if task is None:
++                task = self._tasks[task_id]
++                if self._deadline is not None and time.monotonic() >= self._deadline:
++                    task["status"] = TaskStatus.TIMEOUT
+                     self._pq.task_done()
+                     continue
+                 task["status"] = TaskStatus.RUNNING
+             try:
+                 result = func(*args, **kwargs)
+             except Exception as exc:  # noqa: BLE001 - errors are task results
+-                with self._lock:
+-                    task["status"] = TaskStatus.FAILED
+-                    task["error"] = f"{exc}\n{traceback.format_exc(limit=3)}"
++                outcome = {"status": TaskStatus.FAILED, "error": f"{exc}\n{traceback.format_exc(limit=3)}"}
+             else:
+-                with self._lock:
+-                    task["status"] = TaskStatus.DONE
+-                    task["result"] = result
++                outcome = {"status": TaskStatus.DONE, "result": result}
+             finally:
+                 self._pq.task_done()
++            with self._lock:
++                if self._deadline is not None and time.monotonic() >= self._deadline:
++                    task["status"] = TaskStatus.TIMEOUT
++                elif task["status"] == TaskStatus.RUNNING:
++                    task.update(outcome)
+ 
+     def status(self, task_id: int) -> dict:
+         """Snapshot of a task. Raises KeyError for unknown ids."""
+@@ -93,7 +99,7 @@
+         deadline = time.time() + timeout
+         while time.time() < deadline:
+             snap = self.status(task_id)
+-            if snap["status"] in (TaskStatus.DONE, TaskStatus.FAILED):
++            if snap["status"] in (TaskStatus.DONE, TaskStatus.FAILED, TaskStatus.TIMEOUT):
+                 return snap
+             time.sleep(0.01)
+         raise TimeoutError(f"task {task_id} did not finish in {timeout}s")
+@@ -104,15 +110,31 @@
+         while time.time() < deadline:
+             with self._lock:
+                 pending = [t for t in self._tasks.values() if t["status"] in (TaskStatus.PENDING, TaskStatus.RUNNING)]
+-            if not pending and self._pq.empty():
++            if not pending:
+                 break
+             time.sleep(0.01)
+         with self._lock:
+             return [dict(self._tasks[k]) for k in sorted(self._tasks)]
+ 
+-    def shutdown(self, wait: bool = False) -> None:
+-        """Stop accepting queued work and optionally wait for active writers."""
+-        self._stop.set()
++    def shutdown(self, wait: bool = False, timeout: float | None = None) -> None:
++        """Close submissions. A bounded wait lets queued work drain until the deadline."""
++        deadline = time.monotonic() + timeout if wait and timeout is not None else None
++        with self._lock:
++            if deadline is not None and (self._deadline is None or deadline < self._deadline):
++                self._deadline = deadline
++            if not self._closed:
++                self._closed = True
++                # Bounded drain: stop markers follow queued tasks. Otherwise keep
++                # the original immediate stop, allowing only active calls to finish.
++                priority = float("inf") if deadline is not None else float("-inf")
++                for _ in self._threads:
++                    self._pq.put((priority, -1, None, (), {}))
+         if wait:
+             for thread in self._threads:
+-                thread.join()
++                remaining = None if deadline is None else max(0, deadline - time.monotonic())
++                thread.join(remaining)
++        if deadline is not None:
++            with self._lock:
++                for task in self._tasks.values():
++                    if task["status"] in (TaskStatus.PENDING, TaskStatus.RUNNING):
++                        task["status"] = TaskStatus.TIMEOUT
+diff --git a/app/main.py b/app/main.py
+--- a/app/main.py
++++ b/app/main.py
+@@ -6,6 +6,7 @@
+ import json
+ import sys
+ from pathlib import Path
++from tempfile import TemporaryDirectory
+ 
+ # Allow `python app/main.py` (script dir is app/, project root must be on path)
+ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+@@ -76,44 +77,60 @@
+     output = Path(out)
+     output.mkdir(parents=True, exist_ok=True)
+     results = []
+-    q = TaskQueue(workers=workers)
+-    jobs = []
+-    try:
+-        for i, line in enumerate(lines):
+-            result = {
+-                "index": i, "source_file": line.source_file, "line_no": line.line_no,
+-                "speaker": line.speaker, "status": "failed", "skipped_reason": None,
+-            }
+-            results.append(result)
+-            if translate_to:
++    with TemporaryDirectory(dir=output, prefix=".agv-batch-") as batch:
++        ready = Path(batch) / "ready"
++        ready.mkdir()
++
++        def synthesize(line, index):
++            # A worker may outlive the batch. Keep its open file private until
++            # synthesis completes, including on Windows where it cannot be unlinked.
++            with TemporaryDirectory(dir=output, prefix=".agv-tts-") as scratch:
++                wav = Path(scratch) / "line.wav"
++                generate_voice_to_file(line, str(wav), engine=engine)
++                wav.replace(ready / f"{index}.wav")
++
++        q = TaskQueue(workers=workers)
++        jobs = []
++        try:
++            for i, line in enumerate(lines):
++                result = {
++                    "index": i, "source_file": line.source_file, "line_no": line.line_no,
++                    "speaker": line.speaker, "status": "failed", "skipped_reason": None,
++                }
++                results.append(result)
++                if translate_to:
++                    try:
++                        line = translate_line(line, translate_to, provider=provider)
++                    except Exception as exc:
++                        result["skipped_reason"] = f"Translation failed: {str(exc) or type(exc).__name__}"
++                        continue
++                line.voice_id = line.voice_id or voice
++                if line.emotion == "neutral":
++                    line.emotion = emotion
++                name = f"{i:04d}_{line.speaker or 'narrator'}.wav"
++                tid = q.submit(synthesize, line, i, name=name)
++                jobs.append((tid, line, result))
++        finally:
++            q.shutdown(wait=True, timeout=60)
++
++        # Seal the directory atomically. A late writer can no longer add files
++        # while the report is finalized or the temporary directory is removed.
++        finished = ready.rename(Path(batch) / "finished")
++        completed = []
++        for tid, line, result in jobs:
++            task = q.status(tid)
++            if task["status"] == TaskStatus.DONE:
+                 try:
+-                    line = translate_line(line, translate_to, provider=provider)
+-                except Exception as exc:
+-                    result["skipped_reason"] = f"Translation failed: {str(exc) or type(exc).__name__}"
+-                    continue
+-            line.voice_id = line.voice_id or voice
+-            if line.emotion == "neutral":
+-                line.emotion = emotion
+-            name = f"{i:04d}_{line.speaker or 'narrator'}.wav"
+-            tid = q.submit(generate_voice_to_file, line, str(output / name),
+-                           engine=engine, name=name)
+-            jobs.append((tid, line, result))
+-        q.wait_all(timeout=600)
+-    finally:
+-        # After the deadline, stop taking new lines. A running writer must
+-        # finish before its outcome can be included in the terminal report.
+-        q.shutdown(wait=True)
+-
+-    completed = []
+-    for tid, line, result in jobs:
+-        task = q.status(tid)
+-        if task["status"] == TaskStatus.DONE:
+-            result.update(status="succeeded", wav=task["name"])
+-            completed.append(line)
+-        elif task["status"] == TaskStatus.FAILED:
+-            result["skipped_reason"] = task["error"].splitlines()[0] or "TTS failed"
+-        else:
+-            result["skipped_reason"] = "Batch timed out before synthesis started"
++                    (finished / f"{result['index']}.wav").replace(output / task["name"])
++                except OSError as exc:
++                    result["skipped_reason"] = f"Could not publish WAV: {exc}"
++                else:
++                    result.update(status="succeeded", wav=task["name"])
++                    completed.append(line)
++            elif task["status"] == TaskStatus.FAILED:
++                result["skipped_reason"] = task["error"].splitlines()[0] or "TTS failed"
++            elif task["status"] == TaskStatus.TIMEOUT:
++                result["skipped_reason"] = "TTS timed out"
+ 
+     total, succeeded = len(lines), len(completed)
+     failed = total - succeeded
+diff --git a/tests/test_batch.py b/tests/test_batch.py
+--- a/tests/test_batch.py
++++ b/tests/test_batch.py
+@@ -77,3 +77,57 @@
+     engine.return_value.synthesize.assert_called_once_with("¡Hola!", "sample", emotion="neutral")
+     with wave.open(str(output / "0000_e.wav"), "rb") as wav:
+         assert wav.getnframes() == 80
++
++
++def test_mod_returns_report_while_tts_is_still_blocked(tmp_path, monkeypatch):
++    import json
++    import threading
++    import time
++    from pathlib import Path
++
++    from app.core.queue import task_queue
++    from app.core.tts import generator
++    from app.main import cmd_mod
++
++    game = tmp_path / "game"
++    game.mkdir()
++    (game / "script.rpy").write_text('e "Ready."\ne "Blocked."\ne "Pending."\n', encoding="utf-8")
++    out = tmp_path / "out"
++    started = threading.Event()
++    release = threading.Event()
++    queue = task_queue.TaskQueue(workers=1)
++    shutdown = queue.shutdown
++
++    def short_shutdown(wait, timeout):
++        assert wait and timeout == 60
++        assert started.wait(1)
++        shutdown(wait=True, timeout=0.05)
++
++    def synthesize(line, out_path, **kwargs):
++        with Path(out_path).open("wb") as wav:
++            if line.text == "Blocked.":
++                started.set()
++                release.wait(timeout=3)
++            wav.write(line.text.encode())
++
++    monkeypatch.setattr(task_queue, "TaskQueue", lambda workers: queue)
++    monkeypatch.setattr(queue, "shutdown", short_shutdown)
++    monkeypatch.setattr(generator, "generate_voice_to_file", synthesize)
++    try:
++        before = time.monotonic()
++        report = cmd_mod(str(tmp_path), str(out), workers=1)
++        assert time.monotonic() - before < 1.5
++        assert (report["status"], report["succeeded"], report["failed"], report["total"]) == ("partial", 1, 2, 3)
++        assert [row["skipped_reason"] for row in report["lines"]] == [None, "TTS timed out", "TTS timed out"]
++        assert [path.name for path in out.glob("*.wav")] == ["0000_e.wav"]
++        saved = (out / "report.json").read_bytes()
++        assert json.loads(saved) == report
++        assert "Blocked." not in (out / "dialogue.srt").read_text(encoding="utf-8")
++        # A subsequent run may already own the final path when the old TTS returns.
++        (out / "0001_e.wav").write_bytes(b"new run")
++    finally:
++        release.set()
++        shutdown(wait=True)
++    assert (out / "0001_e.wav").read_bytes() == b"new run"
++    assert (out / "report.json").read_bytes() == saved
++    assert not list(out.glob(".agv-*"))
+diff --git a/tests/test_batch_status.py b/tests/test_batch_status.py
+--- a/tests/test_batch_status.py
++++ b/tests/test_batch_status.py
+@@ -10,6 +10,34 @@
+ from app.core.tts import generator
+ 
+ 
++def prepare_batch(tmp_path, monkeypatch, texts, broken):
++    game = tmp_path / "game"
++    game.mkdir()
++    (game / "script.rpy").write_text(
++        "".join(f'e "{text}"\n' for text in texts), encoding="utf-8",
++    )
++
++    def synthesize(line, out_path, **kwargs):
++        if line.text in broken:
++            raise RuntimeError("test voice unavailable")
++        with wave.open(out_path, "wb") as wav:
++            wav.setparams((1, 2, 8000, 0, "NONE", "not compressed"))
++            wav.writeframes(b"\0\0")
++        return out_path
++
++    monkeypatch.setattr(generator, "generate_voice_to_file", synthesize)
++    return tmp_path / "out"
++
++
++def terminal_status(read_status):
++    deadline = time.monotonic() + 5
++    snapshot = read_status()
++    while snapshot["status"] == "running" and time.monotonic() < deadline:
++        time.sleep(0.01)
++        snapshot = read_status()
++    return snapshot
++
++
+ @pytest.mark.parametrize(
+     ("texts", "broken", "expected"),
+     [
+@@ -20,29 +48,9 @@
+     ],
+ )
+ def test_mod_job_reports_every_line(tmp_path, monkeypatch, texts, broken, expected):
+-    game = tmp_path / "game"
+-    game.mkdir()
+-    (game / "script.rpy").write_text(
+-        "".join(f'e "{text}"\n' for text in texts), encoding="utf-8",
+-    )
+-    out = tmp_path / "out"
+-
+-    def synthesize(line, out_path, **kwargs):
+-        if line.text in broken:
+-            raise RuntimeError("test voice unavailable")
+-        with wave.open(out_path, "wb") as wav:
+-            wav.setparams((1, 2, 8000, 0, "NONE", "not compressed"))
+-            wav.writeframes(b"\0\0")
+-        return out_path
+-
+-    monkeypatch.setattr(generator, "generate_voice_to_file", synthesize)
++    out = prepare_batch(tmp_path, monkeypatch, texts, broken)
+     job = ui_server.start_mod_job({"path": str(tmp_path), "out": str(out)})
+-    deadline = time.monotonic() + 5
+-    snapshot = ui_server.mod_job_status(job)
+-    while snapshot["status"] == "running" and time.monotonic() < deadline:
+-        time.sleep(0.01)
+-        snapshot = ui_server.mod_job_status(job)
+-
++    snapshot = terminal_status(lambda: ui_server.mod_job_status(job))
+     assert snapshot["status"] == expected
+     report = json.loads((out / "report.json").read_text(encoding="utf-8"))
+     assert {key: snapshot[key] for key in report} == report
+@@ -60,3 +68,27 @@
+         else:
+             assert row["status"] == "succeeded" and row["skipped_reason"] is None
+             assert (out / row["wav"]).is_file() and text in subtitles
++
++
++def test_partial_report_through_ui_api(tmp_path, monkeypatch):
++    pytest.importorskip("fastapi")
++    pytest.importorskip("httpx")
++    from fastapi.testclient import TestClient
++
++    out = prepare_batch(tmp_path, monkeypatch, ["First.", "Second."], {"Second."})
++    with TestClient(ui_server.create_app()) as client:
++        start = client.post("/api/mod", json={"path": str(tmp_path), "out": str(out)})
++        start.raise_for_status()
++        job_id = start.json()["job_id"]
++
++        def poll():
++            response = client.get(f"/api/mod/{job_id}")
++            response.raise_for_status()
++            return response.json()
++
++        job = terminal_status(poll)
++
++    report = json.loads((out / "report.json").read_text(encoding="utf-8"))
++    assert {key: job[key] for key in report} == report
++    assert (job["status"], job["succeeded"], job["failed"], job["total"]) == ("partial", 1, 1, 2)
++    assert [row["skipped_reason"] for row in job["lines"]] == [None, "test voice unavailable"]
+diff --git a/tests/test_queue.py b/tests/test_queue.py
+--- a/tests/test_queue.py
++++ b/tests/test_queue.py
+@@ -61,3 +61,42 @@
+     with pytest.raises(TimeoutError):
+         q.wait(tid, timeout=0.1)
+     q.shutdown()
++
++
++def test_shutdown_freezes_running_and_queued_tasks():
++    import threading
++    from unittest.mock import patch
++
++    from app.core.queue.task_queue import TaskQueue, TaskStatus
++
++    queue = TaskQueue(workers=2)
++    started = threading.Barrier(3)
++    release = threading.Event()
++    pending_ran = threading.Event()
++
++    def block(fail):
++        started.wait(timeout=2)
++        release.wait(timeout=3)
++        if fail:
++            raise ValueError("late error")
++        return "late result"
++
++    running = [queue.submit(block, fail) for fail in (False, True)]
++    try:
++        started.wait(timeout=2)
++        pending = queue.submit(pending_ran.set)
++        # The first blocked worker uses the budget. The second gets no extra wait.
++        last_worker = queue._threads[-1]
++        with patch.object(last_worker, "join", wraps=last_worker.join) as last_join:
++            queue.shutdown(wait=True, timeout=0.05)
++        last_join.assert_called_once_with(0)
++        for tid in [*running, pending]:
++            assert queue.wait(tid)["status"] == TaskStatus.TIMEOUT
++    finally:
++        release.set()
++        queue.shutdown(wait=True)
++
++    assert not pending_ran.is_set()
++    for task in queue.wait_all():
++        assert task["status"] == TaskStatus.TIMEOUT
++        assert task["error"] is None and task["result"] is None
+diff --git a/ui/index.html b/ui/index.html
+--- a/ui/index.html
++++ b/ui/index.html
+@@ -85,7 +85,21 @@
+ }
+ async function doJob() {
+   if (!lastJob) return;
+-  document.getElementById('job').textContent = JSON.stringify(await (await fetch('/api/mod/' + lastJob)).json(), null, 2);
++  const id = lastJob;
++  const job = await (await fetch('/api/mod/' + id)).json();
++  if (lastJob !== id) return;
++  const labels = {running: 'Running', done: 'Completed', partial: 'Partially completed', failed: 'Failed'};
++  const rows = [`Job ${id} — ${labels[job.status] || 'Status unavailable'}`];
++  if (job.total != null) {
++    rows.push(`Succeeded: ${job.succeeded}/${job.total}`, `Failed: ${job.failed}/${job.total}`);
++  }
++  if (job.error) rows.push(job.error);
++  for (const line of job.lines || []) {
++    if (line.status === 'failed') {
++      rows.push(`${line.source_file}:${line.line_no} (${line.speaker}) — ${line.skipped_reason}`);
++    }
++  }
++  document.getElementById('job').textContent = rows.join('\n');
+ }
+ setInterval(() => { if (lastJob) doJob(); }, 5000);
+ </script>

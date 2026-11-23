@@ -1,0 +1,808 @@
+diff --git a/README.md b/README.md
+index ecaa127..351cb62 100644
+--- a/README.md
++++ b/README.md
+@@ -69,8 +69,31 @@ python app/main.py ui 8000                # local web UI
+ 
+ ### Uninstalling a mod
+ 
+-Keep the backup path returned by `replace_audio` for each file you install.
+-Pass that path and the same target to `uninstall_audio` when removing the mod.
++After installing the CLI with `pip install .`, use `agv install` to apply a set
++of audio replacements. Each `--map ORIG:GEN` names a file relative to the game
++directory and a generated file relative to `--output`. The generated path
++can also be absolute if it is inside `--output`.
++
++```bash
++manifest=$(agv install --game /x/y/game --output ./output \
++  --map game/voice/beacon.wav:0000_e.wav \
++  --map game/voice/arrival.wav:0001_s.wav)
++agv uninstall --manifest "$manifest"
++```
++
++From a source checkout, `python app/main.py` accepts the same subcommands.
++For game root `/x/y/game`, backups are stored in `/x/y/.agv-backups/<install_id>/`.
++The manifest stays at `/x/y/.agv-manifests/<install_id>.json` after success so you can inspect the
++record or repeat the uninstall.
++
++Uninstall restores files whose current SHA-256 matches the installed version.
++It lists changed files under `conflicts` and absent targets or backups under
++`missing`. These entries, along with any available backups, stay available for
++manual resolution. Exit code 0 indicates a clean result. Conflicts, missing
++files, and restoration errors produce exit code 1.
++
++For a single file, keep the backup path returned by `replace_audio` and pass
++it with the same target to `uninstall_audio`.
+ 
+ ```python
+ from app.core.replacer.audio_replacer import replace_audio, uninstall_audio
+@@ -88,9 +111,6 @@ logs the error. A failed copy leaves the backup available for a retry.
+ Calling `restore_file(backup)` after the backup has been removed raises
+ `FileNotFoundError`.
+ 
+-Uninstall currently operates on one file per call. Manifest-based uninstall
+-for an entire mod is planned for Phase 1.
+-
+ ### Job status
+ 
+ The web UI shows the result of each batch with its succeeded/total and failed/total counts.
+diff --git a/app/core/replacer/backup.py b/app/core/replacer/backup.py
+index 27423fe..401becb 100644
+--- a/app/core/replacer/backup.py
++++ b/app/core/replacer/backup.py
+@@ -9,18 +9,21 @@ import os
+ import re
+ import shutil
+ import time
++from pathlib import Path
+ 
+ __all__ = ["backup_file", "restore_file"]
+ 
+ logger = logging.getLogger(__name__)
+ 
+ 
+-def backup_file(path: str) -> str:
+-    """Copy path to a timestamped .bak sibling. Returns backup path."""
++def backup_file(path: str, *, destination: str | Path | None = None) -> str:
++    """Copy path to a backup, defaulting to a timestamped sibling."""
+     if not path or not os.path.isfile(path):
+         raise FileNotFoundError(f"File not found: {path}")
+-    stamp = time.strftime("%Y%m%d-%H%M%S")
+-    backup = f"{path}.{stamp}.bak"
++    if destination is None:
++        stamp = time.strftime("%Y%m%d-%H%M%S")
++        destination = f"{path}.{stamp}.bak"
++    backup = os.fspath(destination)
+     shutil.copy2(path, backup)
+     return backup
+ 
+@@ -32,7 +35,7 @@ def _original_path(backup: str) -> str:
+     return name.rsplit(".bak", 1)[0].rsplit(".", 1)[0]
+ 
+ 
+-def restore_file(backup: str, original: str = "") -> str:
++def restore_file(backup: str, original: str = "", *, remove_backup: bool = True) -> str:
+     """Restore the original. A missing backup raises FileNotFoundError; cleanup errors are logged."""
+     if not backup or not os.path.isfile(backup):
+         raise FileNotFoundError(f"Backup not found: {backup}")
+@@ -42,10 +45,15 @@ def restore_file(backup: str, original: str = "") -> str:
+     if os.path.exists(target) and os.path.samefile(backup, target):
+         raise shutil.SameFileError(f"Backup and target are the same file: {target}")
+     shutil.copy2(backup, target)
++    if remove_backup:
++        _remove_backup(backup, target)
++    return target
++
++
++def _remove_backup(backup: str | Path, target: str | Path) -> None:
+     try:
+         os.unlink(backup)
+     except FileNotFoundError:
+         pass
+     except OSError as exc:
+         logger.warning("Restored %s, but could not remove backup %s: %s", target, backup, exc)
+-    return target
+diff --git a/app/main.py b/app/main.py
+index 9aae9ca..d21071f 100644
+--- a/app/main.py
++++ b/app/main.py
+@@ -235,6 +235,8 @@ def main(argv=None):
+         print(f"    {prog} scan <game_folder>")
+         print(f"    {prog} extract <game_folder>")
+         print(f"    {prog} mod <game_folder> --out <dir> [--voice model.onnx] [--engine piper] [--emotion neutral] [--translate-to ru] [--workers 2]")
++        print(f"    {prog} install --game PATH --output PATH --map ORIG:GEN [--map ...]")
++        print(f"    {prog} uninstall --manifest PATH")
+         print(f"    {prog} unpack <game_or_container> --out <dir> [--engine auto|unity|unreal]")
+         print(f"    {prog} translate \"text\" --to ru [--provider ollama]")
+         print(f"    {prog} ui [port]")
+@@ -268,6 +270,41 @@ def main(argv=None):
+                          emotion=a.emotion, translate_to=a.translate_to, provider=a.provider)
+         if report["status"] != "done":
+             raise SystemExit(1)
++    elif cmd in ("install", "uninstall"):
++        import argparse
++
++        from app.core.replacer.install import install_mod, uninstall_mod
++
++        parser = argparse.ArgumentParser(prog=f"{prog} {cmd}")
++        if cmd == "install":
++            parser.add_argument("--game", required=True)
++            parser.add_argument("--output", required=True)
++            parser.add_argument("--map", action="append", required=True, metavar="ORIG:GEN")
++            args = parser.parse_args(rest)
++            output = Path(args.output).resolve()
++            replacements = []
++            for mapping in args.map:
++                original, _, generated = mapping.partition(":")
++                if not original or not generated:
++                    parser.error("--map requires an original and a generated path (ORIG:GEN)")
++                replacements.append((original, str(output / generated)))
++            try:
++                path, _ = install_mod(args.game, replacements, str(output))
++            except (OSError, ValueError, RuntimeError) as exc:
++                print(f"install: {exc}", file=sys.stderr)
++                raise SystemExit(1) from exc
++            print(path)
++        else:
++            parser.add_argument("--manifest", required=True)
++            args = parser.parse_args(rest)
++            try:
++                report = uninstall_mod(args.manifest)
++            except (OSError, ValueError, RuntimeError) as exc:
++                print(f"uninstall: {exc}", file=sys.stderr)
++                raise SystemExit(1) from exc
++            print(json.dumps(report, ensure_ascii=False, indent=2))
++            if report["conflicts"] or report["missing"] or report["errors"]:
++                raise SystemExit(1)
+     elif cmd == "unpack" and rest:
+         import argparse
+ 
+@@ -290,7 +327,7 @@ def main(argv=None):
+         a = p.parse_args(rest)
+         cmd_translate(a.text, a.to, source=a.source, provider=a.provider)
+     else:
+-        print(f"Unknown command: {cmd}. Try: scan | extract | ui | config | mod | unpack | translate")
++        print(f"Unknown command: {cmd}. Try: scan | extract | ui | config | mod | install | uninstall | unpack | translate")
+         sys.exit(2)
+ 
+ 
+diff --git a/pyproject.toml b/pyproject.toml
+index 9ec1685..95ae3d0 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -30,6 +30,7 @@ Issues = "https://github.com/Deko-sudo/AnyGameVoice/issues"
+ 
+ [project.scripts]
+ anygamevoice = "app.main:main"
++agv = "app.main:main"
+ 
+ [tool.black]
+ line-length = 100
+diff --git a/app/core/replacer/install.py b/app/core/replacer/install.py
+new file mode 100644
+index 0000000..09a8855
+--- /dev/null
++++ b/app/core/replacer/install.py
+@@ -0,0 +1,237 @@
++"""Install and uninstall a group of audio replacements recorded in a manifest."""
++
++import hashlib
++import logging
++import secrets
++import shutil
++from contextlib import contextmanager
++from datetime import datetime, timezone
++from pathlib import Path
++from tempfile import NamedTemporaryFile, TemporaryDirectory
++
++from .backup import _remove_backup, backup_file, restore_file
++from .manifest import ManifestEntry, ModManifest, _relative_path, _utc_now
++
++__all__ = ["install_mod", "uninstall_mod"]
++
++logger = logging.getLogger(__name__)
++
++
++def _sha256(path: Path) -> str:
++    digest = hashlib.sha256()
++    with path.open("rb") as stream:
++        for block in iter(lambda: stream.read(1024 * 1024), b""):
++            digest.update(block)
++    return digest.hexdigest()
++
++
++def _inside(root: Path, relative: str) -> Path:
++    path = (root / _relative_path(relative)).resolve()
++    if not path.is_relative_to(root) or path == root:
++        raise ValueError(f"Path outside {root}: {relative}")
++    return path
++
++
++def _storage(path: Path) -> Path:
++    if path.is_symlink():
++        raise ValueError(f"Mod storage cannot be a symlink: {path}")
++    return path
++
++
++@contextmanager
++def _game_lock(game: Path):
++    if game == game.parent or game.name.lower() in (".agv-manifests", ".agv-backups"):
++        raise ValueError(f"Invalid game directory: {game}")
++    manifests = _storage(game.parent / ".agv-manifests")
++    manifests.mkdir(mode=0o700, exist_ok=True)
++    lock = manifests / f".{game.name}.lock"
++    try:
++        lock.mkdir(mode=0o700)
++    except FileExistsError as exc:
++        raise RuntimeError(f"Another mod operation holds the lock: {lock}") from exc
++    try:
++        yield manifests
++    finally:
++        lock.rmdir()
++
++
++def _save_manifest(manifest: ModManifest, path: Path) -> None:
++    payload = manifest.to_json()
++    stream = NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent, delete=False)
++    staged = Path(stream.name)
++    try:
++        with stream:
++            stream.write(payload)
++        staged.replace(path)
++    except BaseException:
++        staged.unlink(missing_ok=True)
++        raise
++
++
++def _replacement_paths(
++    game: Path, output: Path, replacements: list[tuple[str, str]],
++) -> list[tuple[Path, Path]]:
++    if not replacements:
++        raise ValueError("At least one replacement is required")
++    pairs = []
++    originals = set()
++    for original, generated in replacements:
++        target = _inside(game, Path(original).as_posix())
++        source = Path(generated)
++        if not source.is_absolute():
++            raise ValueError(f"Generated path must be absolute: {source}")
++        source = source.resolve()
++        if not source.is_relative_to(output):
++            raise ValueError(f"Generated file is outside output_dir: {source}")
++        for path in (target, source):
++            if not path.is_file():
++                raise FileNotFoundError(f"Audio file not found: {path}")
++        if target in originals:
++            raise ValueError(f"Duplicate target: {target}")
++        originals.add(target)
++        pairs.append((target, source))
++    if any(source in originals for _, source in pairs):
++        raise ValueError("A generated file is also a target in this install")
++    return pairs
++
++
++def _rollback(applied: list[tuple[Path, Path]]) -> list[str]:
++    errors = []
++    for target, backup in reversed(applied):
++        try:
++            with TemporaryDirectory(dir=target.parent) as staging:
++                staged = Path(staging) / target.name
++                restore_file(str(backup), str(staged), remove_backup=False)
++                staged.replace(target)
++        except OSError as exc:
++            errors.append(f"{target}: {exc}")
++    return errors
++
++
++def install_mod(
++    game_root: str, replacements: list[tuple[str, str]], output_dir: str,
++) -> tuple[str, ModManifest]:
++    """Replace mapped files and publish a manifest after every replacement succeeds."""
++    game, output = Path(game_root).resolve(), Path(output_dir).resolve()
++    if not game.is_dir():
++        raise ValueError(f"Invalid game directory: {game}")
++    if not output.is_dir():
++        raise NotADirectoryError(output)
++    with _game_lock(game) as manifests:
++        pairs = _replacement_paths(game, output, replacements)
++        now = datetime.now(timezone.utc)
++        install_id = f"{now:%Y%m%dT%H%M%S.%fZ}-{secrets.token_hex(3)}"
++        manifest = ModManifest(install_id, now.isoformat(), str(game), str(output), [])
++        path = manifests / f"{install_id}.json"
++        if path.exists() or path.is_symlink():
++            raise FileExistsError(path)
++        backups = _storage(game.parent / ".agv-backups")
++        backups.mkdir(mode=0o700, exist_ok=True)
++        backup_dir = backups / install_id
++        backup_dir.mkdir(mode=0o700)
++        applied = []
++        try:
++            for index, (target, source) in enumerate(pairs):
++                backup = backup_dir / f"{index:04d}.bak"
++                backup_file(str(target), destination=backup)
++                original_hash = _sha256(backup)
++                with TemporaryDirectory(dir=target.parent) as staging:
++                    staged = Path(staging) / target.name
++                    shutil.copy2(source, staged)
++                    replacement_hash = _sha256(staged)
++                    if _sha256(target) != original_hash:
++                        raise RuntimeError(f"Target changed during install: {target}")
++                    staged.replace(target)
++                    applied.append((target, backup))
++                manifest.entries.append(ManifestEntry(
++                    target.relative_to(game).as_posix(), backup.name,
++                    source.relative_to(output).as_posix(), original_hash,
++                    replacement_hash, _utc_now(),
++                ))
++            _save_manifest(manifest, path)
++        except BaseException as exc:
++            failures = _rollback(applied)
++            if failures:
++                details = "; ".join(failures)
++                raise RuntimeError(f"Rollback incomplete. Backups at {backup_dir}. {details}") from exc
++            shutil.rmtree(backup_dir)
++            raise
++    return str(path), manifest
++
++
++def _restore_entry(
++    manifest: ModManifest, entry: ManifestEntry, path: Path, target: Path, backup: Path,
++) -> bool:
++    """Publish the original and its status before consuming the backup."""
++    with TemporaryDirectory(dir=target.parent, ignore_cleanup_errors=True) as staging:
++        previous = Path(staging) / "previous"
++        staged = Path(staging) / "original"
++        shutil.copy2(target, previous)
++        restore_file(str(backup), str(staged), remove_backup=False)
++        if _sha256(staged) != entry.sha256_original.lower():
++            raise ValueError("Backup SHA-256 does not match the manifest")
++        if _sha256(previous) != entry.sha256_replaced.lower() or _sha256(target) != entry.sha256_replaced.lower():
++            return False
++        staged.replace(target)
++        entry.status = "uninstalled"
++        entry.uninstalled_at = _utc_now()
++        try:
++            _save_manifest(manifest, path)
++        except BaseException:
++            entry.status = "installed"
++            entry.uninstalled_at = None
++            previous.replace(target)
++            raise
++    _remove_backup(backup, target)
++    return True
++
++
++def uninstall_mod(manifest_path: str) -> dict:
++    """Restore matching files, retain unresolved backups, and report per-file outcomes."""
++    path = Path(manifest_path).resolve()
++    game = Path(ModManifest.from_json(path).game_root).resolve()
++    report = dict(restored=0, conflicts=[], missing=[], already_uninstalled=0, errors=[])
++    with _game_lock(game):
++        manifest = ModManifest.from_json(path)
++        if Path(manifest.game_root).resolve() != game:
++            raise ValueError("Manifest game directory changed")
++        backups = _storage(game.parent / ".agv-backups")
++        backup_dir = _storage(backups / manifest.install_id)
++        for entry in manifest.entries:
++            if entry.status == "uninstalled":
++                report["already_uninstalled"] += 1
++                continue
++            if entry.status == "conflict":
++                report["conflicts"].append(entry.original)
++                continue
++            if entry.status == "missing":
++                report["missing"].append(entry.original)
++                continue
++            try:
++                target = _inside(game, entry.original)
++                backup = _inside(backup_dir, entry.backup)
++                if not backup.is_file() or not target.exists():
++                    status, category = "missing", "missing"
++                elif _sha256(target) != entry.sha256_replaced.lower():
++                    status, category = "conflict", "conflicts"
++                elif _restore_entry(manifest, entry, path, target, backup):
++                    report["restored"] += 1
++                    continue
++                else:
++                    status, category = "conflict", "conflicts"
++                entry.status = status
++                try:
++                    _save_manifest(manifest, path)
++                except OSError:
++                    entry.status = "installed"
++                    raise
++                report[category].append(entry.original)
++            except (OSError, ValueError) as exc:
++                report["errors"].append({"original": entry.original, "error": str(exc)})
++        if all(entry.status == "uninstalled" for entry in manifest.entries):
++            if backup_dir.is_dir() and not any(backup_dir.iterdir()):
++                try:
++                    backup_dir.rmdir()
++                except OSError as exc:
++                    logger.warning("Could not remove empty backup directory %s: %s", backup_dir, exc)
++    return report
+diff --git a/app/core/replacer/manifest.py b/app/core/replacer/manifest.py
+new file mode 100644
+index 0000000..da5aa73
+--- /dev/null
++++ b/app/core/replacer/manifest.py
+@@ -0,0 +1,79 @@
++"""On-disk records for multi-file voice mods."""
++
++import json
++import re
++from dataclasses import asdict, dataclass
++from datetime import datetime, timezone
++from pathlib import Path, PurePosixPath, PureWindowsPath
++
++
++def _utc_now() -> str:
++    return datetime.now(timezone.utc).isoformat()
++
++
++def _relative_path(value: str) -> PurePosixPath:
++    if not isinstance(value, str) or not value or "\\" in value or "\0" in value:
++        raise ValueError(f"Invalid relative path: {value!r}")
++    path = PurePosixPath(value)
++    if not path.parts or path.is_absolute() or PureWindowsPath(value).drive or ".." in path.parts:
++        raise ValueError(f"Invalid relative path: {value!r}")
++    return path
++
++
++@dataclass
++class ManifestEntry:
++    original: str
++    backup: str
++    replaced_with: str
++    sha256_original: str
++    sha256_replaced: str
++    installed_at: str
++    uninstalled_at: str | None = None
++    status: str = "installed"
++
++
++@dataclass
++class ModManifest:
++    install_id: str
++    created_at: str
++    game_root: str
++    output_dir: str
++    entries: list[ManifestEntry]
++
++    def to_json(self) -> str:
++        self.validate()
++        return json.dumps(asdict(self), ensure_ascii=False, indent=2) + "\n"
++
++    @classmethod
++    def from_json(cls, path: str | Path) -> "ModManifest":
++        data = json.loads(Path(path).read_text(encoding="utf-8"))
++        try:
++            data["entries"] = [ManifestEntry(**entry) for entry in data["entries"]]
++            manifest = cls(**data)
++        except (KeyError, TypeError) as exc:
++            raise ValueError("Invalid manifest structure") from exc
++        manifest.validate()
++        return manifest
++
++    def validate(self) -> None:
++        if not isinstance(self.install_id, str) or not re.fullmatch(
++            r"\d{8}T\d{6}\.\d{6}Z-[\da-f]{6}", self.install_id, flags=re.ASCII,
++        ):
++            raise ValueError("Invalid install_id")
++        for root in (self.game_root, self.output_dir):
++            if not isinstance(root, str) or "\0" in root or not Path(root).is_absolute():
++                raise ValueError(f"Manifest directory must be absolute: {root!r}")
++        originals, backups = set(), set()
++        for entry in self.entries:
++            original = _relative_path(entry.original)
++            backup = _relative_path(entry.backup)
++            _relative_path(entry.replaced_with)
++            if original in originals or backup in backups:
++                raise ValueError("Duplicate original or backup in manifest")
++            originals.add(original)
++            backups.add(backup)
++            for digest in (entry.sha256_original, entry.sha256_replaced):
++                if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", digest):
++                    raise ValueError(f"Invalid SHA-256 for {entry.original}")
++            if entry.status not in ("installed", "uninstalled", "conflict", "missing"):
++                raise ValueError(f"Invalid status for {entry.original}: {entry.status!r}")
+diff --git a/tests/test_manifest.py b/tests/test_manifest.py
+new file mode 100644
+index 0000000..c8a690a
+--- /dev/null
++++ b/tests/test_manifest.py
+@@ -0,0 +1,231 @@
++"""Manifest-based install and uninstall without any game or TTS runtime."""
++
++import json
++import re
++import shutil
++import stat
++import subprocess
++import sys
++from dataclasses import replace
++from hashlib import sha256
++from pathlib import Path
++
++import pytest
++
++from app.core.replacer import install
++from app.core.replacer.install import install_mod, uninstall_mod
++from app.core.replacer.manifest import ModManifest
++
++
++@pytest.fixture
++def game_files(tmp_path):
++    game = tmp_path / "game"
++    output = tmp_path / "output"
++    output.mkdir()
++    pairs = []
++    for index, name in enumerate(("voice/маяк.wav", "voice/arrival.wav", "other/arrival.wav")):
++        target = game / name
++        target.parent.mkdir(parents=True, exist_ok=True)
++        target.write_bytes(f"original {index}".encode())
++        source = output / f"{index}.wav"
++        source.write_bytes(f"dub {index}".encode())
++        pairs.append((name, str(source)))
++    return game, pairs, output
++
++
++@pytest.fixture
++def mod(game_files):
++    game, pairs, output = game_files
++    path, manifest = install_mod(str(game), pairs, str(output))
++    backup_dir = game.parent / ".agv-backups" / manifest.install_id
++    return path, manifest, backup_dir
++
++
++def assert_originals(game_files):
++    game, pairs, _ = game_files
++    for index, (relative, _) in enumerate(pairs):
++        assert (game / relative).read_bytes() == f"original {index}".encode()
++
++
++def test_install_creates_manifest_and_backups(game_files, mod):
++    game, pairs, output = game_files
++    path, manifest, backup_dir = mod
++    assert Path(path) == game.parent / ".agv-manifests" / f"{manifest.install_id}.json"
++    assert re.fullmatch(r"\d{8}T\d{6}\.\d{6}Z-[0-9a-f]{6}", manifest.install_id)
++    assert manifest.created_at.endswith("+00:00")
++    assert (manifest.game_root, manifest.output_dir) == (str(game), str(output))
++    assert ModManifest.from_json(path) == manifest
++    assert "маяк" in Path(path).read_text(encoding="utf-8")
++    assert len(list(backup_dir.glob("*.bak"))) == 3
++    if sys.platform != "win32":
++        assert stat.S_IMODE(backup_dir.stat().st_mode) == 0o700
++    for index, (entry, (relative, source)) in enumerate(zip(manifest.entries, pairs)):
++        original = f"original {index}".encode()
++        generated = Path(source).read_bytes()
++        assert entry.original == relative and entry.replaced_with == f"{index}.wav"
++        assert entry.status == "installed" and entry.uninstalled_at is None
++        assert entry.installed_at.endswith("+00:00")
++        assert (backup_dir / entry.backup).read_bytes() == original
++        assert (game / relative).read_bytes() == generated
++        assert entry.sha256_original == sha256(original).hexdigest()
++        assert entry.sha256_replaced == sha256(generated).hexdigest()
++
++
++def test_uninstall_restores_three_originals(game_files, mod):
++    path, _, backup_dir = mod
++    report = uninstall_mod(path)
++    assert report == dict(restored=3, conflicts=[], missing=[], already_uninstalled=0, errors=[])
++    assert_originals(game_files)
++    assert not backup_dir.exists()
++    entries = ModManifest.from_json(path).entries
++    assert all(entry.status == "uninstalled" and entry.uninstalled_at.endswith("+00:00")
++               for entry in entries)
++
++
++def test_uninstall_is_idempotent(mod):
++    path, _, _ = mod
++    uninstall_mod(path)
++    assert uninstall_mod(path) == dict(
++        restored=0, conflicts=[], missing=[], already_uninstalled=3, errors=[],
++    )
++
++
++def test_uninstall_preserves_conflicting_file_and_backup(game_files, mod):
++    path, manifest, backup_dir = mod
++    game, _, _ = game_files
++    entry = manifest.entries[0]
++    changed = game / entry.original
++    changed.write_bytes(b"player edit")
++    report = uninstall_mod(path)
++    assert report["restored"] == 2 and report["conflicts"] == [entry.original]
++    assert changed.read_bytes() == b"player edit"
++    assert (backup_dir / entry.backup).read_bytes() == b"original 0"
++    assert ModManifest.from_json(path).entries[0].status == "conflict"
++    assert uninstall_mod(path)["conflicts"] == [entry.original]
++
++
++def test_uninstall_reports_missing_backup_without_changing_target(game_files, mod):
++    path, manifest, backup_dir = mod
++    game, _, _ = game_files
++    entry = manifest.entries[0]
++    (backup_dir / entry.backup).unlink()
++    report = uninstall_mod(path)
++    assert report["restored"] == 2 and report["missing"] == [entry.original]
++    assert (game / entry.original).read_bytes() == b"dub 0"
++    assert backup_dir.is_dir()
++    assert ModManifest.from_json(path).entries[0].status == "missing"
++
++
++def test_missing_original_is_rejected_before_replacing_any_file(game_files):
++    game, pairs, output = game_files
++    with pytest.raises(FileNotFoundError):
++        install_mod(str(game), [*pairs, ("absent.wav", pairs[0][1])], str(output))
++    assert_originals(game_files)
++    assert not list((game.parent / ".agv-backups").glob("*"))
++    assert not list((game.parent / ".agv-manifests").glob("*.json"))
++
++
++def test_install_rejects_a_target_symlink_that_leaves_the_game(game_files):
++    game, pairs, output = game_files
++    outside = game.parent / "outside.wav"
++    outside.write_bytes(b"outside")
++    try:
++        (game / "link.wav").symlink_to(outside)
++    except (NotImplementedError, PermissionError):
++        pytest.skip("Creating symlinks is unavailable")
++    with pytest.raises(ValueError, match="Path outside"):
++        install_mod(str(game), [*pairs, ("link.wav", pairs[0][1])], str(output))
++    assert outside.read_bytes() == b"outside"
++    assert_originals(game_files)
++
++
++def test_failed_third_copy_rolls_back_installed_files(game_files, monkeypatch):
++    game, pairs, output = game_files
++    copy = shutil.copy2
++
++    def fail_on_third(source, destination):
++        if Path(source) == Path(pairs[2][1]):
++            assert (game / pairs[0][0]).read_bytes() == b"dub 0"
++            assert (game / pairs[1][0]).read_bytes() == b"dub 1"
++            Path(destination).write_bytes(b"partial write")
++            raise OSError("third copy failed")
++        return copy(source, destination)
++
++    monkeypatch.setattr(shutil, "copy2", fail_on_third)
++    with pytest.raises(OSError, match="third copy failed"):
++        install_mod(str(game), pairs, str(output))
++    assert_originals(game_files)
++    assert not list((game.parent / ".agv-backups").glob("*"))
++    assert not list((game.parent / ".agv-manifests").glob("*.json"))
++
++
++def test_failed_manifest_write_leaves_uninstall_safe_to_retry(game_files, mod, monkeypatch):
++    game, pairs, _ = game_files
++    path, manifest, backup_dir = mod
++
++    def fail_to_save(*args):
++        raise OSError("manifest write failed")
++
++    with monkeypatch.context() as patch:
++        patch.setattr(install, "_save_manifest", fail_to_save)
++        result = uninstall_mod(path)
++    assert result["restored"] == 0 and len(result["errors"]) == 3
++    assert ModManifest.from_json(path) == manifest
++    assert len(list(backup_dir.glob("*.bak"))) == 3
++    assert [(game / relative).read_bytes() for relative, _ in pairs] == [
++        b"dub 0", b"dub 1", b"dub 2",
++    ]
++    assert uninstall_mod(path)["restored"] == 3
++
++
++def test_uninstall_rejects_a_corrupt_backup(game_files, mod):
++    game, _, _ = game_files
++    path, manifest, backup_dir = mod
++    entry = manifest.entries[0]
++    backup = backup_dir / entry.backup
++    backup.write_bytes(b"corrupt")
++    result = uninstall_mod(path)
++    assert result["restored"] == 2
++    assert result["errors"] == [{
++        "original": entry.original, "error": "Backup SHA-256 does not match the manifest",
++    }]
++    assert backup.read_bytes() == b"corrupt"
++    assert (game / entry.original).read_bytes() == b"dub 0"
++    assert ModManifest.from_json(path).entries[0].status == "installed"
++
++
++@pytest.mark.parametrize(("field", "bad_value"), [
++    ("original", "../outside.wav"),
++    ("backup", "/tmp/outside.bak"),
++    ("sha256_replaced", "g" * 64),
++    ("status", "unknown"),
++])
++def test_invalid_manifest_is_rejected(mod, field, bad_value):
++    _, manifest, _ = mod
++    manifest.entries[0] = replace(manifest.entries[0], **{field: bad_value})
++    with pytest.raises(ValueError):
++        manifest.validate()
++
++
++def test_cli_install_and_uninstall_exit_codes(game_files):
++    game, pairs, output = game_files
++    cli = [sys.executable, "-B", "-m", "app.main"]
++    args = ["install", "--game", str(game), "--output", str(output)]
++    for target, source in pairs:
++        args.extend(("--map", f"{target}:{Path(source).name}"))
++    installed = subprocess.run([*cli, *args], capture_output=True, text=True, check=True)
++    manifest_path = installed.stdout.strip()
++    assert Path(manifest_path).is_file()
++    (game / pairs[0][0]).write_bytes(b"manual edit")
++    args = ["uninstall", "--manifest", manifest_path]
++    conflict = subprocess.run([*cli, *args], capture_output=True, text=True)
++    assert conflict.returncode == 1
++    report = json.loads(conflict.stdout)
++    assert report["conflicts"] == [pairs[0][0]] and report["restored"] == 2
++    installed = subprocess.run([*cli, "install", "--game", str(game), "--output", str(output),
++                                "--map", f"{pairs[0][0]}:{Path(pairs[0][1]).name}"],
++                               capture_output=True, text=True, check=True)
++    restored = subprocess.run([*cli, "uninstall", "--manifest", installed.stdout.strip()],
++                              capture_output=True, text=True, check=True)
++    assert json.loads(restored.stdout)["restored"] == 1
++    assert (game / pairs[0][0]).read_bytes() == b"manual edit"
+diff --git a/reports/phase1.md b/reports/phase1.md
+new file mode 100644
+index 0000000..cf899f6
+--- /dev/null
++++ b/reports/phase1.md
+@@ -0,0 +1,57 @@
++# Фаза 1. Установка и снятие мода по манифесту
++
++**Фаза 1 готова.** CLI устанавливает набор файлов и сохраняет манифест. Проверки подтвердили откат при сбое установки, восстановление неизменённых файлов и сохранение пользовательских изменений при конфликте.
++
++## Формат манифеста
++
++Ниже пример для одной замены. Идентификатор содержит UTC timestamp в компактном формате ISO 8601 и шесть случайных шестнадцатеричных символов. Даты в полях JSON записываются в ISO 8601 UTC. Поля `original`, `backup` и `replaced_with` отсчитываются от директории игры, директории резервных копий и директории сгенерированных файлов соответственно.
++
++```json
++{
++  "install_id": "20261123T095400.123456Z-a1b2c3",
++  "created_at": "2026-11-23T09:54:00.123456+00:00",
++  "game_root": "/x/y/game",
++  "output_dir": "/x/y/output",
++  "entries": [
++    {
++      "original": "voice/маяк.wav",
++      "backup": "0000.bak",
++      "replaced_with": "0.wav",
++      "sha256_original": "15b12239dd66f813134d0d466832754be262ed2514b147af8a1f87b9f9c1a4bc",
++      "sha256_replaced": "1fdc8bd632b2313a00cf6200afaf488d482e68b3173c031d2899c36c6c8d025b",
++      "installed_at": "2026-11-23T09:54:00.125000+00:00",
++      "uninstalled_at": null,
++      "status": "installed"
++    }
++  ]
++}
++```
++
++Для `game_root=/x/y/game` манифест размещается в `/x/y/.agv-manifests/<install_id>.json`, а копии в `/x/y/.agv-backups/<install_id>/`. Директория копий создаётся с режимом `0o700`. Рабочие пути проверяются на принадлежность своим каталогам после разрешения симлинков. Дубликаты целей отклоняются до замены файлов.
++
++## Установка, конфликты и восстановление
++
++- Установка проверяет все пары, сохраняет бэкап и SHA-256 перед заменой каждого файла. Запись WAV и манифеста публикуется через атомарное переименование на той же файловой системе. При ошибке копирования или записи манифеста уже применённые замены откатываются. Если сам откат завершился ошибкой, команда сообщает путь к сохранённым копиям.
++- При снятии SHA-256 текущего WAV сравнивается с `sha256_replaced`. Изменённый файл получает `conflict`, его содержимое и доступная копия сохраняются. Отсутствующий целевой файл или бэкап дают `missing`. Статус `missing` добавлен к перечню допустимых статусов, чтобы сохранить это состояние между вызовами. Повторная команда снова перечисляет нерешённые записи. Остальные файлы восстанавливаются независимо.
++- Перед восстановлением проверяется SHA-256 копии. Повреждённый бэкап даёт запись в `errors`, а WAV остаётся на месте. Если манифест после восстановления записать не удалось, предыдущая версия WAV возвращается на место и копия остаётся доступной для повтора.
++- После успешного восстановления и записи статуса `uninstalled` использованная копия удаляется. Пустой каталог установки удаляется, когда все записи восстановлены. Для конфликтов и отсутствующих файлов каталог сохраняется. Неудачная очистка после успешного снятия отражается предупреждением.
++- Манифест сохраняется после успеха для проверки истории и идемпотентности. Повтор команды возвращает количество ранее восстановленных записей в `already_uninstalled`. CLI выдаёт JSON и завершает работу с кодом 1 при конфликтах, пропусках или ошибках восстановления.
++
++Атомарность относится к публикации отдельного файла и манифеста. Для обычных ошибок во время установки предусмотрен откат всего набора. Принудительное завершение процесса или сбой питания между заменами может потребовать ручного разбора копий и удаления оставшейся блокировки `.agv-manifests/.<game-name>.lock` после завершения процесса.
++
++## Проверка
++
++В `tests/test_manifest.py` добавлено 15 тестовых случаев.
++
++| Проверка | Что подтверждено |
++|---|---|
++| Установка трёх файлов | Манифест, Unicode, права каталога, три копии, оба SHA-256, одинаковые имена файлов в разных каталогах. |
++| Снятие и повторный вызов | Три побайтно восстановленных файла, три сохранённых статуса, удалённый пустой каталог и `already_uninstalled=3`. |
++| Конфликт и отсутствующая копия | Два исправных файла восстановлены, проблемная запись сохранена, изменённый WAV остался на месте. |
++| Проверка входных данных | Отсутствующий оригинал, симлинк за пределы игры, абсолютный путь в записи, обход через `..`, неверный хеш и неизвестный статус. |
++| Ошибки операций | Откат первых двух файлов при частичной записи третьего, безопасный повтор после ошибки записи манифеста и отказ от испорченного бэкапа. |
++| CLI | Установка через повторяющийся `--map`, JSON-отчёт, exit 1 при конфликте и exit 0 при чистом снятии. |
++
++`python -B -m pytest -q -p no:cacheprovider tests` — **98 passed, 1 warning**. Предупреждение относится к существующему HTTP-тесту Starlette и httpx. Прогон выполнен с исходниками только для чтения, приватным `/tmp` и изолированной сетью. Собранный wheel содержит точки входа `agv` и `anygamevoice`.
++
++[Инструкция в README](../README.md#uninstalling-a-mod) · [Дифф Фазы 1](phase1.patch)
