@@ -235,6 +235,10 @@ def main(argv=None):
         print(f"    {prog} scan <game_folder>")
         print(f"    {prog} extract <game_folder>")
         print(f"    {prog} mod <game_folder> --out <dir> [--voice model.onnx] [--engine piper] [--emotion neutral] [--translate-to ru] [--workers 2]")
+        print(f"    {prog} install --game PATH --output PATH --map ORIG:GEN [--map ...]")
+        print(f"    {prog} uninstall --manifest PATH")
+        print(f"    {prog} manifests list [--game PATH]")
+        print(f"    {prog} manifests prune [--game PATH] [--older-than 30d] [--dry-run]")
         print(f"    {prog} unpack <game_or_container> --out <dir> [--engine auto|unity|unreal]")
         print(f"    {prog} translate \"text\" --to ru [--provider ollama]")
         print(f"    {prog} ui [port]")
@@ -268,6 +272,49 @@ def main(argv=None):
                          emotion=a.emotion, translate_to=a.translate_to, provider=a.provider)
         if report["status"] != "done":
             raise SystemExit(1)
+    elif cmd in ("install", "uninstall"):
+        import argparse
+
+        from app.core.replacer.install import install_mod, uninstall_mod
+
+        parser = argparse.ArgumentParser(prog=f"{prog} {cmd}")
+        if cmd == "install":
+            parser.add_argument("--game", required=True)
+            parser.add_argument("--output", required=True)
+            parser.add_argument("--map", action="append", required=True, metavar="ORIG:GEN")
+            args = parser.parse_args(rest)
+            output = Path(args.output).resolve()
+            replacements = []
+            for mapping in args.map:
+                original, _, generated = mapping.partition(":")
+                if not original or not generated:
+                    parser.error("--map requires an original and a generated path (ORIG:GEN)")
+                replacements.append((original, str(output / generated)))
+            try:
+                path, _ = install_mod(args.game, replacements, str(output))
+            except (OSError, ValueError, RuntimeError) as exc:
+                print(f"install: {exc}", file=sys.stderr)
+                raise SystemExit(1) from exc
+            print(path)
+        else:
+            parser.add_argument("--manifest", required=True)
+            args = parser.parse_args(rest)
+            try:
+                report = uninstall_mod(args.manifest)
+            except (OSError, ValueError, RuntimeError) as exc:
+                print(f"uninstall: {exc}", file=sys.stderr)
+                raise SystemExit(1) from exc
+            print(json.dumps(report, ensure_ascii=False, indent=2))
+            if report["conflicts"] or report["missing"] or report["errors"]:
+                raise SystemExit(1)
+    elif cmd == "manifests":
+        from app.core.replacer.catalog import manifests_command
+
+        try:
+            manifests_command(rest, f"{prog} manifests")
+        except (OSError, ValueError, RuntimeError) as exc:
+            print(f"manifests: {exc}", file=sys.stderr)
+            raise SystemExit(1) from exc
     elif cmd == "unpack" and rest:
         import argparse
 
@@ -290,7 +337,7 @@ def main(argv=None):
         a = p.parse_args(rest)
         cmd_translate(a.text, a.to, source=a.source, provider=a.provider)
     else:
-        print(f"Unknown command: {cmd}. Try: scan | extract | ui | config | mod | unpack | translate")
+        print(f"Unknown command: {cmd}. Try: scan | extract | ui | config | mod | install | uninstall | manifests | unpack | translate")
         sys.exit(2)
 
 

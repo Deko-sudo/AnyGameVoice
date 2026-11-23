@@ -30,6 +30,7 @@ Issues = "https://github.com/Deko-sudo/AnyGameVoice/issues"
 
 [project.scripts]
 anygamevoice = "app.main:main"
+agv = "app.main:main"
 
 [tool.black]
 line-length = 100

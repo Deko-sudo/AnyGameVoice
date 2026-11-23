@@ -69,8 +69,52 @@ python app/main.py ui 8000                # local web UI
 
 ### Uninstalling a mod
 
-Keep the backup path returned by `replace_audio` for each file you install.
-Pass that path and the same target to `uninstall_audio` when removing the mod.
+After installing the CLI with `pip install .`, use `agv install` to apply a set
+of audio replacements. Each `--map ORIG:GEN` names a file relative to the game
+directory and a generated file relative to `--output`. The generated path
+can also be absolute if it is inside `--output`.
+
+```bash
+manifest=$(agv install --game /x/y/game --output ./output \
+  --map game/voice/beacon.wav:0000_e.wav \
+  --map game/voice/arrival.wav:0001_s.wav)
+agv uninstall --manifest "$manifest"
+```
+
+From a source checkout, `python app/main.py` accepts the same subcommands.
+For game root `/x/y/game`, backups are stored in `/x/y/.agv-backups/<install_id>/`.
+The manifest stays at `/x/y/.agv-manifests/<install_id>.json` after success so you can inspect the
+record or repeat the uninstall.
+
+**Install in order A → B and uninstall in reverse order B → A.** Each installation
+backs up the versions it finds. Removing B first puts A's files back so A can
+then be removed safely.
+
+Uninstall restores files whose current SHA-256 matches the installed version.
+A `conflict` means the file changed after installation, often because another mod
+was installed over it or someone edited it by hand. The file stays in place.
+Check the saved manifest for the affected path and the corresponding backup under
+`.agv-backups/<install_id>/`. A recorded conflict stays in the manifest for
+manual resolution. If a backup is missing, recover the original from your game
+installation, distributor or another copy. You can remove the replacement
+manually when you intend to leave the file absent.
+
+If a process crashes, the next operation checks the lock and takes it over
+when it is stale. If recovery fails, confirm that no mod operation is running
+for the game before manually removing `.agv-manifests/.<game>.lock`.
+
+Use `agv manifests list` from the directory containing `.agv-manifests`, or pass
+`--game /x/y/game` from any directory to see the records for that game.
+`agv manifests prune --older-than 30d --dry-run` previews cleanup of fully
+uninstalled records at least 30 days old, using their creation dates. Without
+`--older-than`, prune selects completed records of any age. Active records and
+records with conflicts or missing files stay available for review.
+
+Uninstall exits with code 0 for a clean result. Conflicts, missing files, and
+restoration errors produce exit code 1.
+
+For a single file, keep the backup path returned by `replace_audio` and pass
+it with the same target to `uninstall_audio`.
 
 ```python
 from app.core.replacer.audio_replacer import replace_audio, uninstall_audio
@@ -87,9 +131,6 @@ backup path and reason. If restoration fails, the call returns `False` and
 logs the error. A failed copy leaves the backup available for a retry.
 Calling `restore_file(backup)` after the backup has been removed raises
 `FileNotFoundError`.
-
-Uninstall currently operates on one file per call. Manifest-based uninstall
-for an entire mod is planned for Phase 1.
 
 ### Job status
 
