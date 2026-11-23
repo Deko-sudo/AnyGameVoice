@@ -221,6 +221,15 @@ Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 - [Plugin Development](docs/plugin_development.md)
 - [FAQ](docs/faq.md)
 
+## Testing on a real game
+
+Phase 1.5 is a manual smoke test outside CI. Use a clean copy of a Ren'Py
+game, then run the helper to generate WAVs and install directly matched voice
+lines. Play both branches in the Ren'Py SDK, then run the helper again to
+uninstall and verify the original audio by SHA-256.
+
+[Checklist](docs/phase1_5-checklist.md) · [Smoke-test helper](scripts/phase1_5_smoke.sh) · [Report template](docs/phase1_5-report-template.md)
+
 ## 🗺️ Roadmap
 
 See [ROADMAP.md](ROADMAP.md) for planned features.
