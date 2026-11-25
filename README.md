@@ -205,9 +205,9 @@ Apache 2.0 — Free to use, modify, and distribute.
 
 This project is completely free. If you'd like to support development:
 
-- 🇷🇺 [Boosty](https://boosty.to/YOUR_PAGE)
-- 🌍 [Patreon](https://patreon.com/YOUR_PAGE)
-- ☕ [Ko-fi](https://ko-fi.com/YOUR_PAGE)
+- 🇷🇺 [Boosty](-)
+- 🌍 [Patreon](-)
+- ☕ [Ko-fi](-)
 
 ## 🤝 Contributing
 
