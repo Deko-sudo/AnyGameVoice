@@ -226,6 +226,12 @@ def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     prog = _prog()
     if not argv:
+        # Packaged CLI callers also pipe the banner to identify the executable.
+        if getattr(sys, "frozen", False) and sys.stdout and not sys.stdout.isatty():
+            argv = ["--help"]
+        else:
+            return cmd_ui()
+    if argv in (["--help"], ["-h"], ["help"]):
         _banner()
         print()
         print("  Status: Ready — CLI + local web UI")

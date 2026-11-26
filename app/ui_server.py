@@ -67,18 +67,15 @@ def mod_job_status(job_id: int) -> dict:
 def create_app():
     """Build the FastAPI application (imports are lazy for clear errors)."""
     try:
-        from fastapi import FastAPI
-        from fastapi.responses import FileResponse, JSONResponse
+        from fastapi.responses import JSONResponse
     except ImportError as exc:
         raise RuntimeError(
             "Web UI needs fastapi. Run: pip install -r requirements.txt"
         ) from exc
 
-    app = FastAPI(title="AnyGameVoice", version="0.1.0")
+    from app.studio.ui_server import create_app as create_studio
 
-    @app.get("/")
-    def index():
-        return FileResponse(INDEX)
+    app = create_studio()
 
     @app.get("/api/health")
     def health():

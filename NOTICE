@@ -1,0 +1,12 @@
+AnyGameVoice
+Copyright 2025 AnyGameVoice Contributors
+Licensed under the Apache License, Version 2.0.
+
+Material palette generation uses Material Color Utilities 0.3.0.
+Copyright 2021 Google LLC. Licensed under the Apache License, Version 2.0.
+https://github.com/material-foundation/material-color-utilities
+The generator is a development tool; its library code is not bundled in the studio.
+
+The bundled Manrope font is licensed under the SIL Open Font License 1.1.
+Copyright 2018 The Manrope Project Authors (https://github.com/googlefonts/manrope)
+The font license is retained in ui/fonts/OFL.txt.

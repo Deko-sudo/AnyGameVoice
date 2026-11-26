@@ -1,0 +1,12 @@
+{
+  "name": "anygamevoice-theme-tools",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "generate": "node ../generate-themes.mjs"
+  },
+  "devDependencies": {
+    "@material/material-color-utilities": "0.3.0",
+    "esbuild": "0.25.12"
+  }
+}

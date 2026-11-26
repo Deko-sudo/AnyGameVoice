@@ -10,6 +10,8 @@ import os
 import shutil
 import subprocess
 
+from app.utils.runtime import piper_command
+
 from .base import BaseTTSEngine
 
 __all__ = ["PiperEngine"]
@@ -20,11 +22,11 @@ class PiperEngine(BaseTTSEngine):
 
     def __init__(self, model_path: str = "", binary: str = "piper") -> None:
         self.model_path = model_path
-        self.binary = binary
+        self.command = (piper_command() or [binary]) if binary == "piper" else [binary]
 
     def is_available(self) -> bool:
         """True if piper binary is on PATH."""
-        return shutil.which(self.binary) is not None
+        return shutil.which(self.command[0]) is not None
 
     def synthesize(self, text: str, voice: str = "", emotion: str = "neutral") -> bytes:
         """Synthesize wav bytes. Raises RuntimeError if piper is missing."""
@@ -51,7 +53,7 @@ class PiperEngine(BaseTTSEngine):
             out = tmp.name
         try:
             proc = subprocess.run(
-                [self.binary, "--model", model, "--output_file", out, *extra.get("cli_flags", [])],
+                [*self.command, "--model", model, "--output_file", out, *extra.get("cli_flags", [])],
                 input=clean.encode("utf-8"),
                 capture_output=True,
                 timeout=120,

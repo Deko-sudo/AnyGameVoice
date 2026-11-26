@@ -1,107 +1,313 @@
-<!DOCTYPE html>
-<html lang="en">
+<!doctype html>
+<!-- Modified 2026-10-22: Material 3 studio, offline themes and license information. -->
+<html lang="ru" data-theme="iris" data-mode="light">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AnyGameVoice</title>
-<style>
-  :root { color-scheme: dark; }
-  body { font-family: system-ui, sans-serif; background: #14161a; color: #e8e8e8; margin: 0; padding: 24px; }
-  h1 { font-size: 1.6rem; }
-  .card { background: #1e2127; border: 1px solid #333; border-radius: 10px; padding: 16px; margin: 12px 0; }
-  input[type=text] { width: 70%; padding: 8px; border-radius: 6px; border: 1px solid #555; background: #101216; color: #eee; }
-  button { padding: 8px 14px; margin: 4px; border-radius: 6px; border: 1px solid #555; background: #2b6cb0; color: #fff; cursor: pointer; }
-  button:hover { background: #2c5282; }
-  #drop { border: 2px dashed #555; border-radius: 10px; padding: 28px; text-align: center; color: #aaa; }
-  #drop.over { border-color: #2b6cb0; color: #fff; }
-  pre { background: #101216; padding: 12px; border-radius: 8px; overflow: auto; max-height: 400px; }
-  table { border-collapse: collapse; width: 100%; }
-  td, th { border-bottom: 1px solid #333; padding: 6px; text-align: left; font-size: 0.9rem; }
-</style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Локальная студия создания озвучки для игр. Реплики, персонажи и голоса в одном рабочем пространстве.">
+  <meta name="theme-color" content="#141715">
+  <title>AnyGameVoice — студия озвучки</title>
+  <link rel="icon" href="/assets/icon.svg" type="image/svg+xml">
+  <script src="/assets/themes.js?v=0.1.1-11"></script>
+  <script src="/assets/custom-color.js"></script>
+  <script src="/assets/appearance.js?v=0.1.1-12"></script>
+  <link rel="stylesheet" href="/assets/themes.css?v=0.1.1-11">
+  <link rel="stylesheet" href="/assets/studio.css?v=0.1.1-26">
+  <script defer src="/assets/studio.js?v=0.1.1-16"></script>
+  <script defer src="/assets/model-studio.js?v=0.1.1-30"></script>
+  <script defer src="/assets/automatic.js?v=0.1.1-15"></script>
+  <script defer src="/assets/setup-components.js?v=0.1.1-13"></script>
 </head>
 <body>
-<h1>🎮 AnyGameVoice <small style="color:#888">local-first voice modding</small></h1>
+<a class="skip" href="#workspace">Перейти к рабочей области</a>
+<svg class="symbols" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="i-wave" viewBox="0 0 24 24"><path d="M4 10v4m4-8v12m4-16v20m4-16v12m4-8v4"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v9H3Z"/></symbol>
+  <symbol id="i-lines" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h9M3 6h.01M3 12h.01M3 18h.01"/></symbol>
+  <symbol id="i-voices" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2m18 0v-2a4 4 0 0 0-3-3.87M15 3.13a4 4 0 0 1 0 7.75"/><circle cx="9" cy="7" r="4"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="m8 5 11 7-11 7Z"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M4 12h15m-6-6 6 6-6 6"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3"/><circle cx="16" cy="17" r="3"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></symbol>
+  <symbol id="i-palette" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18h1a2 2 0 0 0 1-3.7 1.4 1.4 0 0 1 .8-2.6H17A4 4 0 0 0 21 11c0-4.4-4-8-9-8Z"/><path d="M7 10h.01M10 6.5h.01M15 7h.01M17.5 10.5h.01" stroke-width="3"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14a8.5 8.5 0 0 1-10-10 9 9 0 1 0 10 10Z"/></symbol>
+  <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M6.5 19a4.5 4.5 0 0 1-.8-8.93 6 6 0 0 1 11.54-1.54A5.25 5.25 0 0 1 17.75 19Z"/></symbol>
+  <symbol id="i-tower" viewBox="0 0 24 24"><rect x="6" y="2.5" width="12" height="19" rx="2"/><path d="M9 7h6m-6 3h6"/><circle cx="12" cy="16.5" r="1.2"/></symbol>
+  <symbol id="i-system" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8m-4-4v4"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-11v1"/></symbol>
+</svg>
+<div class="app-shell">
+  <aside class="sidebar" aria-label="Навигация студии">
+    <a class="brand" href="/" aria-label="AnyGameVoice — главная"><span class="brand-mark"><svg><use href="#i-wave"/></svg></span><span>AnyGame<span class="brand-light">Voice</span><small>СТУДИЯ ОЗВУЧКИ</small></span></a>
+    <button class="new-project" id="new-project"><svg><use href="#i-plus"/></svg>Новый проект</button>
+    <div class="nav-caption">Рабочее пространство</div>
+    <nav class="navigation" aria-label="Разделы проекта">
+      <button class="nav-item active" data-tab="dialogue" aria-current="page"><svg><use href="#i-lines"/></svg>Реплики<span class="nav-count" id="nav-lines">—</span></button>
+      <button class="nav-item" data-tab="voices"><svg><use href="#i-voices"/></svg>Персонажи<span class="nav-count" id="nav-characters">—</span></button>
+      <button class="nav-item" data-tab="jobs"><svg><use href="#i-clock"/></svg>Генерация<span id="job-indicator" class="nav-dot" hidden></span></button>
+      <button class="nav-item" data-tab="research"><svg><use href="#i-search"/></svg>Исследование</button>
+    </nav>
+    <div class="sidebar-note"><span class="small-label">Первый шаг</span><p>Дайте каждой реплике свой голос.</p><span>Начните с папки игры или учебной сцены.</span><button class="text-link" id="demo-side">Открыть учебную сцену <span>↗</span></button></div>
+    <button class="quiet-button help-trigger" id="welcome-open" type="button" aria-haspopup="dialog" aria-controls="welcome-dialog"><svg><use href="#i-settings"/></svg>Первый запуск</button>
+    <button class="quiet-button help-trigger" id="help-button" aria-haspopup="dialog" aria-controls="help-dialog"><svg><use href="#i-info"/></svg>Как пользоваться</button><div class="sidebar-bottom"><span class="connection"><i id="connection-dot"></i><span id="connection-label">Подключение…</span></span><span class="version">Локальная версия · 0.1.1-dev</span></div>
+  </aside>
 
-<div class="card">
-  <div id="drop">Drop files here (names preview) or type the game folder path below</div>
-  <p><input type="text" id="path" placeholder="C:\Games\MyRenpyGame"></p>
-  <button onclick="doScan()">Scan folder</button>
-  <button onclick="doExtract()">Extract dialogue</button>
-  <button onclick="doVoices()">List voices</button>
+  <main id="workspace" class="main-area">
+    <header class="topbar"><div class="breadcrumb">Студия <span>/</span> <span id="crumb">Новый проект</span></div><div class="topbar-actions"><button class="quiet-button appearance-trigger" id="appearance-button" aria-haspopup="dialog" aria-controls="appearance-dialog"><svg><use href="#i-palette"/></svg><span>Оформление</span><span id="appearance-current" class="appearance-current">Ирис</span></button><button class="quiet-button" id="import-project"><svg><use href="#i-folder"/></svg>Открыть проект</button><button class="quiet-button" id="save-project" title="Сохранить проект" disabled><svg><use href="#i-download"/></svg>Сохранить</button></div></header>
+    <div class="content">
+      <section class="project-heading" aria-labelledby="project-title"><div><div class="eyebrow"><span class="eyebrow-line"></span><span id="heading-kicker">ВАША ИГРА. ВАШИ ГОЛОСА.</span></div><h1 id="project-title">Начните новую историю.</h1><p id="project-description">Превратите игровые диалоги в озвучку — на своём компьютере.</p></div><div class="project-badge" id="engine-badge"><svg><use href="#i-wave"/></svg><span>Аудиостудия</span></div></section>
+      <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+      <section class="source-panel" aria-label="Выбор игры"><div class="source-icon"><svg><use href="#i-folder"/></svg></div><div class="source-content"><label for="game-path">Папка игры</label><form id="source-form" class="source-form"><input id="game-path" type="text" placeholder="/home/you/Games/MyGame" autocomplete="off" spellcheck="false"><button class="button secondary" id="extract-button" type="submit">Открыть игру <svg><use href="#i-arrow"/></svg></button></form><div class="source-help"><button class="text-link" id="steam-games" type="button">Ищем игры…</button><button class="text-link" id="browse-game" type="button">Выбрать папку…</button><span id="source-hint">Выберите папку игры с файлом запуска. Steam-игры можно выбрать из списка.</span><button class="text-link" id="demo-button">Попробовать на учебной сцене</button></div></div></section>
+      <section class="autopilot" aria-labelledby="autopilot-title">
+        <div class="autopilot-heading"><div><h2 id="autopilot-title">От папки до озвучки</h2><p>Программа найдёт диалоги, подберёт голос и сохранит результат.</p></div><button class="text-link" id="setup-button" type="button">Подготовить приложение</button><label class="auto-switch"><input id="auto-mode" type="checkbox" checked>Автоматически</label></div>
+        <ol class="auto-steps" aria-label="Этапы подготовки"><li data-step="folder">Игра</li><li data-step="dialogue">Диалоги</li><li data-step="voice">Голос</li><li data-step="synthesis">Запись</li><li data-step="install">Установка</li><li data-step="verify">Проверка</li><li data-step="result">Результат</li></ol>
+        <div id="auto-status" role="status" aria-live="polite"><strong id="auto-title">Выберите папку — начнём автоматически</strong><p id="auto-detail">Для Ren’Py и Lost Coast установим и проверим мод. Для RPG Maker и Godot подготовим аудиофайлы.</p></div>
+        <div id="auto-choices" class="auto-choices" hidden></div>
+        <button class="text-link" id="auto-retry" type="button" hidden>Продолжить автоматически</button>
+      </section>
+      <details class="model-overview" id="model-overview" aria-labelledby="model-overview-title"><summary>Модели и возможности вашего компьютера</summary>
+        <div class="model-overview-heading"><div><h2 id="model-overview-title">Модели для вашего компьютера</h2><p id="machine-summary" role="status">Проверяем ресурсы…</p><p>Рекомендации доступны до выбора игры. Автоматический режим использует обычный голос Piper; выберите модель вручную, если нужен другой вариант.</p></div><button class="button secondary" id="choose-models" aria-haspopup="dialog" aria-controls="model-picker">Выбрать модели <svg><use href="#i-settings"/></svg></button></div>
+        <div class="model-overview-columns"><div><span>Озвучка</span><strong id="recommended-voice">Подбираем…</strong><small id="recommended-voice-note"></small></div><div><span>Исследование игры</span><strong id="recommended-research">Подбираем…</strong><small id="recommended-research-note"></small></div><div><span>Ориентир по памяти</span><strong id="model-class"></strong><small id="model-upper"></small></div></div>
+        <p class="model-estimate-note" id="model-estimate-note"></p>
+      </details>
+      <div class="workspace-grid">
+        <div class="editor-column">
+          <section class="project-stats" aria-label="Состав проекта"><div><span class="stat-label">Реплики</span><strong id="stat-lines">—</strong></div><div><span class="stat-label">Персонажи</span><strong id="stat-characters">—</strong></div><div><span class="stat-label">Исходные файлы</span><strong id="stat-files">—</strong></div><div class="stats-note"><span class="status-dot"></span><span id="project-state">Ожидает игру</span></div></section>
+          <section class="editor-panel" id="dialogue-panel" aria-labelledby="dialogue-title">
+            <div class="panel-heading"><div><h2 id="dialogue-title">Реплики</h2><span class="panel-subtitle" id="dialogue-caption">Здесь начинается озвучка</span></div><div class="segmented" aria-label="Режим просмотра"><button class="selected" data-view="all">Все</button><button data-view="ready">Готовые <span id="ready-count">0</span></button></div></div>
+            <div class="table-toolbar" id="table-toolbar" hidden><div class="search-field"><svg><use href="#i-search"/></svg><input type="search" id="line-search" placeholder="Поиск по репликам…" aria-label="Поиск по репликам"></div><select id="speaker-filter" aria-label="Фильтр по персонажу"><option value="">Все персонажи</option></select></div>
+            <div class="empty-state" id="empty-state"><div class="empty-art" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div><h3>У каждой истории есть голос</h3><p>Откройте папку игры. Мы найдём диалоги и соберём персонажей в одном месте.</p><button class="button secondary" id="demo-empty">Изучить учебную сцену <svg><use href="#i-arrow"/></svg></button><span class="empty-footnote">Исходные файлы игры не изменяются</span></div>
+            <div class="table-wrap" id="table-wrap" hidden><table><thead><tr><th class="number-column" scope="col">№</th><th scope="col">Персонаж</th><th scope="col">Текст реплики</th><th scope="col">Статус</th><th scope="col"><span class="sr-only">Прослушивание</span></th></tr></thead><tbody id="dialogue-body"></tbody></table><div class="no-matches" id="no-matches" hidden>По этому запросу реплик нет.</div></div>
+            <footer class="table-footer" id="table-footer" hidden><span id="page-label"></span><div><button class="page-button" id="previous-page" aria-label="Предыдущая страница">←</button><button class="page-button" id="next-page" aria-label="Следующая страница">→</button></div></footer>
+          </section>
+          <section class="editor-panel" id="voices-panel" aria-labelledby="voices-title" hidden><div class="panel-heading"><div><h2 id="voices-title">Голоса персонажей</h2><span class="panel-subtitle">Свой голос для каждого участника истории</span></div><svg class="heading-icon"><use href="#i-voices"/></svg></div><div id="characters-list" class="characters-list"><p class="muted">Сначала откройте игру с диалогами.</p></div></section>
+          <section class="editor-panel" id="jobs-panel" aria-labelledby="jobs-title" hidden><div class="panel-heading"><div><h2 id="jobs-title">Генерация озвучки</h2><span class="panel-subtitle">Результаты и ошибки текущего запуска</span></div><svg class="heading-icon"><use href="#i-clock"/></svg></div><div id="jobs-content" class="jobs-content"><div class="job-empty"><h3>Студия готова к записи</h3><p>Откройте игру, выберите модель голоса и запустите генерацию.</p></div></div></section>
+          <section class="editor-panel research-panel" id="research-panel" aria-labelledby="research-title" hidden>
+            <div class="panel-heading"><div><h2 id="research-title">Исследование игры</h2><span class="panel-subtitle">Русский дубляж, актёры и реплики для сравнения</span></div><svg class="heading-icon"><use href="#i-search"/></svg></div>
+            <div class="research-content">
+              <p class="research-intro">Сначала найдём существующую озвучку и проверим, кто говорит за персонажа. Затем добавим образец голоса и сравним результат на репликах игры.</p>
+              <form id="research-form">
+                <label for="research-title-input">Название игры и дополнения</label><input id="research-title-input" maxlength="200" placeholder="Например, Cyberpunk 2077: Phantom Liberty" required>
+                <label for="research-model">Модель исследования</label><select id="research-model"><option value="">Сначала откройте игру</option></select><p class="field-hint" id="research-model-help"></p>
+                <div id="research-key-field" hidden><label for="research-key">API-ключ провайдера</label><input id="research-key" type="password" maxlength="4096" autocomplete="off" spellcheck="false"><p class="field-hint">Ключ хранится только до перезагрузки страницы. Если он уже настроен для OpenRouter или сервер принимает запросы без ключа, оставьте поле пустым.</p></div>
+                <label for="research-search">Источники</label><select id="research-search"><option value="none">Мой источник · без интернет-поиска</option></select><p class="field-hint" id="research-search-help">При поиске сервис получит название игры. Файлы игры и образцы речи не отправляются.</p>
+                <details id="provided-source" open><summary>Добавить свой источник</summary><label for="research-source-url">Ссылка на сведения о дубляже</label><input id="research-source-url" type="url" maxlength="2000" placeholder="https://…"><label for="research-source-text">Выдержка из источника</label><textarea id="research-source-text" rows="4" maxlength="4000" placeholder="Укажите персонажа и актёра вместе с текстом, который это подтверждает."></textarea><p class="field-hint">Используется текст выдержки. Страница по ссылке автоматически не скачивается.</p></details>
+                <button class="button primary" id="run-research" type="submit" disabled><svg><use href="#i-search"/></svg>Исследовать игру</button><p class="field-hint" id="research-state" role="status" aria-live="polite">Откройте игру, чтобы подобрать модель.</p>
+              </form>
+              <div id="research-results" hidden></div>
+              <section class="reference-section" aria-labelledby="reference-title"><h3 id="reference-title">Образец голоса актёра</h3><p>Добавьте чистую русскую речь без музыки. Сходство зависит от образца и модели; проверим его пробной записью.</p>
+                <form id="reference-form"><div class="field-pair"><div><label for="reference-character">Персонаж</label><select id="reference-character"><option value="">Нужны извлечённые персонажи</option></select></div><div><label for="reference-actor">Актёр</label><input id="reference-actor" maxlength="120" placeholder="Имя из источника"></div></div><label for="reference-path">Локальный WAV · 6–120 секунд</label><input id="reference-path" placeholder="/путь/к/образцу.wav" required><label class="reference-cap"><input id="reference-protected" type="checkbox"> Образец из прежней русской озвучки персонажа · сила по умолчанию 95%</label><button class="button secondary" id="apply-reference" type="submit" disabled>Проверить и назначить образец</button><p class="field-hint" id="reference-state" role="status" aria-live="polite"></p></form>
+              </section>
+            </div>
+          </section>
+          <div class="workflow-note"><svg><use href="#i-info"/></svg><p>Ren’Py и Lost Coast: установка и проверка мода. RPG Maker и Godot: создание аудиофайлов. Подробности — в «Как пользоваться».</p></div>
+        </div>
+        <aside class="settings-panel" aria-labelledby="settings-title">
+          <div class="settings-heading"><svg><use href="#i-settings"/></svg><h2 id="settings-title">Озвучка</h2></div>
+          <details class="settings-scroll manual-settings" id="manual-settings"><summary>Настроить вручную</summary><div class="settings-section"><label for="renpy-sdk">Ren’Py SDK</label><input id="renpy-sdk" type="text" placeholder="Найдём установленный SDK автоматически" autocomplete="off" spellcheck="false"><button class="text-link" id="browse-sdk" type="button">Выбрать папку SDK…</button><p class="field-hint">Нужен для установки мода Ren’Py. Укажите папку с renpy.sh. Если SDK уже установлен в tools приложения, путь вводить не нужно.</p></div>
+          <div class="settings-section"><div class="field-label"><label for="tts-engine">Синтез речи</label><span class="tiny-tag">ЛОКАЛЬНО</span></div><select id="tts-engine"><option value="piper">Piper · быстрый синтез</option><option value="xtts">XTTS · образец голоса</option><option value="silero">Silero</option><option value="bark">Bark</option></select><p class="field-hint" id="engine-hint">Проверяем доступные движки…</p>
+          <label for="voice-select">Основной голос</label><select id="voice-select"><option value="">Указать путь к модели</option></select><input type="text" id="voice-path" aria-label="Путь к модели голоса" placeholder="/путь/к/голосу.onnx" autocomplete="off" spellcheck="false"><p class="field-hint" id="voice-hint">Для Piper нужны .onnx и .onnx.json рядом.</p>
+          <div class="field-pair"><div><label for="voice-language">Язык речи</label><select id="voice-language"><option value="ru">Русский</option><option value="en">English</option><option value="de">Deutsch</option><option value="fr">Français</option><option value="es">Español</option><option value="ja">日本語</option></select></div><div><label for="voice-emotion">Подача</label><select id="voice-emotion"><option value="neutral">Обычная</option><option value="happy">Бодрая</option><option value="sad">Спокойная</option><option value="angry">Резкая</option><option value="whisper">Тихая</option><option value="shouting">Громкая</option></select></div></div><p class="field-hint">Язык модели должен совпадать с текстом. Подача Piper меняет темп и вариативность.</p></div>
+          <div class="settings-section"><div class="section-label"><span class="small-label">Пробная запись</span><svg><use href="#i-wave"/></svg></div><label class="sr-only" for="preview-text">Текст пробной записи</label><textarea id="preview-text" rows="3" maxlength="2000">У каждой истории есть голос. Давайте найдём ваш.</textarea><button class="preview-button" id="preview-button"><svg><use href="#i-play"/></svg>Прослушать голос</button><div class="audio-player" id="audio-player" hidden><span id="audio-label">Пробная запись</span><audio id="audio" controls preload="none"></audio></div></div>
+          <div class="settings-section export-settings"><label for="output-path">Папка результата</label><input type="text" id="output-path" placeholder="/home/you/VoiceMods/MyGame" autocomplete="off" spellcheck="false"><p class="field-hint">Отдельная папка вне каталога игры. Готовые реплики сохраняются для повторного запуска.</p><details class="advanced"><summary>Дополнительные настройки</summary><label for="worker-count">Параллельные задачи</label><select id="worker-count"><option value="1">1 · меньше памяти</option><option value="2" selected>2 · по умолчанию</option><option value="4">4 · больше ресурсов</option></select><button class="text-link" id="scan-hardware">Проверить оборудование</button><p id="hardware-result" class="field-hint"></p></details></div>
+          </details>
+          <div class="generate-area"><div class="generate-meta"><span id="generate-label">Откройте игру для начала</span><button class="text-link" id="project-json-open" type="button" aria-haspopup="dialog">Настройки JSON</button></div><button class="button primary" id="generate-button" disabled><svg><use href="#i-wave"/></svg><span id="generate-button-text">Создать озвучку</span><svg><use href="#i-arrow"/></svg></button><button class="button secondary" id="auto-selected" type="button" hidden disabled>Создать и подключить выбранный голос</button><button class="button secondary cancel-button" id="cancel-button" hidden>Остановить генерацию</button><div class="mini-progress" id="mini-progress" hidden><progress id="progress" value="0" max="1" aria-label="Прогресс генерации"></progress><span id="progress-label">Подготовка…</span></div><span class="export-footnote">Аудио останется на вашем компьютере</span></div>
+        </aside>
+      </div>
+      <footer class="main-footer"><span>Сделано для ваших историй.</span><span>AnyGameVoice <span class="footer-separator">/</span> <button class="text-link license-link" id="licenses-button" aria-haspopup="dialog" aria-controls="licenses-dialog">Apache 2.0 · Лицензии</button></span></footer>
+    </div>
+  </main>
 </div>
 
-<div class="card"><h3>Result</h3><pre id="out">Ready. Everything runs locally.</pre></div>
-<div class="card"><h3>Dialogue</h3><div id="dlg"><i>No extraction yet.</i></div></div>
-
-<div class="card"><h3>Generate mod (background job)</h3>
-  <p><input type="text" id="outdir" placeholder="Output dir, e.g. C:\Mods\mygame-out"></p>
-  <p><input type="text" id="voicemodel" placeholder="Voice model .onnx (optional for non-piper engines)"></p>
-  <p>Engine <input type="text" id="engine" value="piper" style="width:100px">
-     Emotion <input type="text" id="emotion" value="neutral" style="width:100px"></p>
-  <button onclick="doMod()">Start mod job</button>
-  <button onclick="doJob()">Refresh job status</button>
-  <pre id="job">No job started.</pre>
-</div>
-
-<script>
-const out = document.getElementById('out');
-const drop = document.getElementById('drop');
-drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
-drop.addEventListener('dragleave', () => drop.classList.remove('over'));
-drop.addEventListener('drop', e => {
-  e.preventDefault(); drop.classList.remove('over');
-  const names = [...e.dataTransfer.files].slice(0, 10).map(f => f.name).join('\n');
-  out.textContent = 'Dropped files (preview only — browsers hide real paths):\n' + names +
-    '\n\nType the full game folder path above, then Scan.';
-});
-async function post(api, body) {
-  const r = await fetch(api, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
-  return r.json();
-}
-function gamePath() { return document.getElementById('path').value.trim(); }
-async function doScan() {
-  out.textContent = 'Scanning...';
-  out.textContent = JSON.stringify(await post('/api/scan', {path: gamePath()}), null, 2);
-}
-async function doExtract() {
-  out.textContent = 'Extracting...';
-  const data = await post('/api/extract', {path: gamePath()});
-  out.textContent = `Extracted ${data.total} lines (showing ${data.lines.length}).`;
-  document.getElementById('dlg').innerHTML = '<table><tr><th>File</th><th>Speaker</th><th>Text</th></tr>' +
-    data.lines.map(l => `<tr><td>${l.source_file}:${l.line_no}</td><td>${l.speaker}</td><td>${l.text}</td></tr>`).join('') + '</table>';
-}
-async function doVoices() {
-  out.textContent = JSON.stringify(await (await fetch('/api/voices')).json(), null, 2);
-}
-let lastJob = 0;
-async function doMod() {
-  const body = {path: gamePath(), out: document.getElementById('outdir').value.trim(),
-    voice: document.getElementById('voicemodel').value.trim(),
-    engine: document.getElementById('engine').value.trim() || 'piper',
-    emotion: document.getElementById('emotion').value.trim() || 'neutral'};
-  const data = await post('/api/mod', body);
-  lastJob = data.job_id || 0;
-  document.getElementById('job').textContent = 'Job ' + lastJob + ' started...';
-}
-async function doJob() {
-  if (!lastJob) return;
-  const id = lastJob;
-  const job = await (await fetch('/api/mod/' + id)).json();
-  if (lastJob !== id) return;
-  const labels = {running: 'Running', done: 'Completed', partial: 'Partially completed', failed: 'Failed'};
-  const rows = [`Job ${id} — ${labels[job.status] || 'Status unavailable'}`];
-  if (job.total != null) {
-    rows.push(`Succeeded: ${job.succeeded}/${job.total}`, `Failed: ${job.failed}/${job.total}`);
-  }
-  if (job.error) rows.push(job.error);
-  for (const line of job.lines || []) {
-    if (line.status === 'failed') {
-      rows.push(`${line.source_file}:${line.line_no} (${line.speaker}) — ${line.skipped_reason}`);
-    }
-  }
-  document.getElementById('job').textContent = rows.join('\n');
-}
-setInterval(() => { if (lastJob) doJob(); }, 5000);
-</script>
+<dialog id="project-json-dialog" class="material-dialog" aria-labelledby="project-json-title">
+  <header class="dialog-heading"><div><h2 id="project-json-title">Настройки проекта · JSON</h2><p>Измените настройки перед записью или скачайте файл для редактирования.</p></div><form method="dialog"><button class="icon-button" aria-label="Закрыть настройки JSON"><svg><use href="#i-close"/></svg></button></form></header>
+  <div class="dialog-content">
+    <label for="project-json-text">JSON проекта</label>
+    <textarea id="project-json-text" class="project-json-editor" rows="14" spellcheck="false" autofocus></textarea>
+    <p class="field-hint">Голоса из прежнего русского дубляжа указываются в <code>protected_voices</code>. Для них <code>strength</code> задаёт силу переноса тембра XTTS от 0 до 1. По умолчанию используется 0.95. При значениях ниже 1 укажите <code>base_voice</code> — путь к WAV с другим голосом. При 1 используется только образец актёра. Сходство оценивается на слух.</p>
+    <p id="project-json-error" class="field-hint" role="alert" hidden></p>
+  </div>
+  <footer class="dialog-footer"><button class="text-link" id="project-json-download" type="button">Скачать JSON</button><button class="button primary" id="project-json-apply" type="button">Применить</button></footer>
+</dialog>
+<dialog id="setup-dialog" class="material-dialog" aria-labelledby="setup-title">
+<header class="dialog-heading"><div><span class="dialog-eyebrow">ПОДГОТОВКА ПРИЛОЖЕНИЯ</span><h2 id="setup-title">Компоненты для озвучки</h2><p>Покажем, что уже установлено и что потребуется скачать.</p></div><form method="dialog"><button class="icon-button" aria-label="Закрыть подготовку компонентов"><svg><use href="#i-close"/></svg></button></form></header>
+<div class="dialog-content"><label for="setup-language">Язык голоса</label><select id="setup-language"><option value="ru">Русский</option><option value="en">English</option></select><div id="setup-list" class="setup-list"></div><p id="setup-summary" class="field-hint"></p><p id="setup-notice" class="field-hint">Загрузка начнётся после нажатия кнопки. Компоненты хранятся отдельно от системного Python. Для первоначальной подготовки нужно не менее 2 ГБ свободного места.</p><progress id="setup-progress" aria-label="Текущая загрузка компонентов" hidden></progress><p id="setup-status" role="status" aria-live="polite"></p></div>
+<footer class="dialog-footer"><button class="text-link" id="setup-manual" type="button">Указать SDK вручную</button><button class="text-link" id="setup-cancel" type="button" hidden>Остановить подготовку</button><button class="button primary" id="setup-install" type="button" disabled>Установить компоненты</button></footer>
+</dialog>
+<dialog id="help-dialog" class="material-dialog help-dialog" aria-labelledby="help-title">
+  <header class="dialog-heading"><div><span class="dialog-eyebrow">НАЧНИТЕ ЗДЕСЬ</span><h2 id="help-title">Как пользоваться AnyGameVoice</h2><p>Для начала достаточно выбрать установленную игру.</p></div><form method="dialog"><button class="icon-button" aria-label="Закрыть инструкцию" autofocus><svg><use href="#i-close"/></svg></button></form></header>
+  <div class="dialog-content help-content">
+    <ol class="help-steps"><li><strong>Выберите игру</strong><p>Приложение найдёт доступные библиотеки Steam и стандартную папку игр. Нажмите «Найденные игры» и выберите название. Или нажмите «Выбрать папку» и откройте каталог, где лежит файл запуска игры — например, <code>SteamLibrary/steamapps/common/Название игры</code>.</p><p>Выбирайте саму игру, а не сохранения, рабочий стол или всю библиотеку. Если внутри несколько игр, приложение предложит выбрать одну.</p></li>
+    <li><strong>Оставьте автоматический режим включённым</strong><p>Мы определим движок, извлечём доступные реплики, определим язык и подберём установленный голос под свободную память. Папка результата выбирается автоматически; один основной голос озвучивает всех персонажей.</p><p>Для латиницы язык определяется как английский. Для другого языка откройте «Настроить вручную». Автоматический режим читает имеющийся текст и не переводит его.</p></li>
+    <li><strong>Дождитесь результата</strong><p>Запись начнётся сама. На экране видны этап, число готовых реплик и ошибки. Можно остановить запись; при повторном запуске проверенные готовые файлы используются повторно.</p></li>
+    <li><strong>Слушайте или запускайте игру</strong><p>Кнопка «Открыть папку результата» покажет WAV-файлы и отчёт. Реплики можно прослушать в студии.</p><p>В Ren’Py и Lost Coast мод устанавливается и проверяется автоматически: перезапустите игру. «Отключить озвучку» возвращает исходный звук после перезапуска игры. Голос, синхронизацию губ и поведение сцен нужно проверить в самой игре.</p></li></ol>
+    <h3>Что поддерживается сейчас</h3><p><strong>Lost Coast:</strong> русские субтитры → новый голос Рыбака → мод в <code>lostcoast/custom</code>. Кашель, шумы и реплики без надёжной связи со звуком сохраняются. Комментарии разработчиков не переозвучиваются. Оригинальные архивы не изменяются.</p><p><strong>Ren’Py (.rpy):</strong> автоматическая установка и проверка мода по идентификаторам движка. Нужен Ren’Py SDK; установленный SDK определяется автоматически или выбирается через «Настроить вручную». Сценарий должен поддерживаться полностью. <strong>RPG Maker (Map JSON), Godot Dialogue Manager (.dialogue):</strong> автоматическое создание аудиофайлов. Подключение их в игру пока выполняется отдельно. Для Unity, Unreal, .rpa и .rpyc нужен соответствующий адаптер; приложение сообщит об этом до записи.</p>
+    <details><summary>Если голос или компонент не найден</summary><p>Нажмите «Подготовить приложение» в панели автоматического режима. Доступны русский и английский голоса, Piper, SDK Ren’Py (Linux x86-64/ARM64) и FFmpeg для Lost Coast. Приложение покажет размер, источник и лицензию, установит компоненты отдельно от системы и выполнит пробную запись. После подготовки прерванный автоматический запуск продолжится. Для других голосов укажите пару <code>имя.onnx</code> и <code>имя.onnx.json</code> через «Настроить вручную» → «Основной голос».</p></details>
+    <details><summary>Если папка не подходит</summary><p>В Steam откройте игру → «Управление» → «Просмотреть локальные файлы». Эту папку нужно выбрать в AnyGameVoice. Для Lost Coast подходит также папка Half-Life 2: приложение найдёт lostcoast внутри. Для SDK выберите каталог с файлом renpy.sh.</p></details>
+    <details><summary>Если нужны разные голоса</summary><p>Выключите «Автоматически» до выбора игры. Откройте «Настроить вручную», выберите язык и основной голос, затем назначьте другие голоса в разделе «Персонажи». Для Ren’Py и Lost Coast нажмите «Создать и подключить выбранный голос» — приложение проверит и установит мод с вашими голосами. Кнопка «Создать озвучку» сохраняет только аудиофайлы.</p></details>
+  </div><footer class="dialog-footer"><button class="text-link" id="help-demo">Проверить на учебной сцене</button><button class="button primary" id="help-choose">Выбрать игру</button></footer>
+</dialog>
+<dialog id="steam-picker" class="material-dialog" aria-labelledby="steam-title"><header class="dialog-heading"><div><span class="dialog-eyebrow">УСТАНОВЛЕНО НА ЭТОМ ПК</span><h2 id="steam-title">Найденные игры</h2></div><form method="dialog"><button class="icon-button" aria-label="Закрыть список игр"><svg><use href="#i-close"/></svg></button></form></header><div class="dialog-content"><label class="sr-only" for="steam-filter">Найти игру</label><input id="steam-filter" placeholder="Найти игру по названию…" type="search"><p id="game-libraries" class="field-hint"></p><div id="steam-list" class="steam-list" aria-live="polite"></div></div><footer class="dialog-footer"><span>Выбор игры запускает автоматическую подготовку.</span><form method="dialog"><button class="text-link">Отмена</button></form></footer></dialog>
+<dialog id="welcome-dialog" class="material-dialog welcome-dialog" aria-labelledby="welcome-title" aria-describedby="welcome-description">
+  <header class="dialog-heading">
+    <div><h2 id="welcome-title" tabindex="-1">Добро пожаловать в AnyGameVoice</h2><p id="welcome-description">Где будут работать ваши модели?</p></div>
+    <form method="dialog"><button class="icon-button" aria-label="Закрыть приветственное окно"><svg><use href="#i-close"/></svg></button></form>
+  </header>
+  <div class="dialog-content">
+    <div id="welcome-mode-panel" class="welcome-mode-grid">
+      <button class="welcome-mode-card" data-welcome-mode="cloud" type="button" autofocus>
+        <svg aria-hidden="true"><use href="#i-cloud"/></svg>
+        <strong>Облачное</strong><span>LLM на внешнем сервисе</span>
+      </button>
+      <button class="welcome-mode-card" data-welcome-mode="local" type="button">
+        <svg aria-hidden="true"><use href="#i-tower"/></svg>
+        <strong>Локальное</strong><span>Модели на вашем компьютере</span>
+      </button>
+    </div>
+    <details id="welcome-comparison" class="welcome-comparison" open hidden>
+      <summary>Сравнение LLM для русских реплик</summary>
+      <p id="welcome-ranking-status" class="field-hint" role="status"></p>
+      <ul id="welcome-ranking-models"></ul>
+      <p class="field-hint">Сравнение по первым 100 позициям Arena для русского текста. Цены OpenRouter за 1 млн токенов указаны для ввода и вывода по порядку.</p>
+      <a class="text-link" href="https://arena.ai/leaderboard/chat/text/russian" target="_blank" rel="noopener noreferrer">Открыть рейтинг Arena</a>
+    </details>
+    <div id="welcome-provider-panel" hidden>
+      <fieldset class="welcome-providers">
+        <legend class="sr-only">Провайдер</legend>
+        <h3 class="welcome-provider-heading">Клиенты на этом компьютере</h3>
+        <div id="welcome-client-list" class="welcome-client-list"></div>
+        <div id="welcome-detected" hidden>
+          <p>Также найдены</p>
+          <ul id="welcome-detected-list" aria-label="Другие установленные агенты"></ul>
+          <p class="field-hint">Для этих клиентов тариф и лимиты пока не подтверждены.</p>
+        </div>
+        <h3 class="welcome-provider-heading">Облачные сервисы <span id="welcome-provider-count"></span></h3>
+        <label class="sr-only" for="welcome-provider-search">Поиск провайдера</label>
+        <input id="welcome-provider-search" type="search" placeholder="Найти OpenAI, Anthropic, Copilot…" autocomplete="off">
+        <div class="welcome-filter"><label><input type="checkbox" id="welcome-providers-connected"> Только подключённые</label><label><input type="checkbox" id="welcome-providers-free"> С бесплатными моделями</label></div>
+        <div id="welcome-provider-list" class="welcome-provider-list" role="region" aria-label="Каталог облачных сервисов" tabindex="0"></div>
+        <div id="welcome-custom-provider"></div>
+      </fieldset>
+      <p id="welcome-provider-detail" class="field-hint" hidden></p>
+      <p id="welcome-provider-status" class="field-hint" role="status"></p>
+      <button id="welcome-provider-login" class="button secondary" type="button" hidden>Подключить через OpenCode</button>
+      <button id="welcome-provider-refresh" class="text-link" type="button">Обновить статусы</button>
+      <a id="welcome-provider-site" class="text-link" target="_blank" rel="noopener noreferrer" hidden>Открыть сайт провайдера</a>
+      <div id="welcome-openrouter-fields" class="welcome-custom-fields" hidden>
+        <label for="welcome-openrouter-key">API-ключ OpenRouter</label>
+        <input id="welcome-openrouter-key" type="password" maxlength="4096" autocomplete="off" spellcheck="false">
+        <p class="field-hint">Можно посмотреть каталог без ключа. Если укажете ключ, студия проверит его и запомнит до перезагрузки этой вкладки.</p>
+      </div>
+      <div id="welcome-custom-fields" class="welcome-custom-fields" hidden>
+        <label for="welcome-custom-name">Название</label>
+        <input id="welcome-custom-name" maxlength="80" placeholder="Свой провайдер">
+        <label for="welcome-custom-url">Базовый URL OpenAI-совместимого API</label>
+        <input id="welcome-custom-url" type="url" maxlength="2048" placeholder="https://example.com/v1" autocomplete="off">
+        <label for="welcome-custom-key">API-ключ (если нужен)</label>
+        <input id="welcome-custom-key" type="password" maxlength="4096" autocomplete="off" spellcheck="false">
+        <p class="field-hint">«Далее» загрузит каталог моделей. Ключ будет доступен в этой вкладке для запросов к провайдеру.</p>
+        <button id="welcome-custom-manual" class="text-link" type="button">Ввести ID модели вручную</button>
+      </div>
+    </div>
+    <div id="welcome-llm-panel" hidden>
+      <div id="welcome-model-search-field" hidden><label for="welcome-model-search">Поиск модели</label><input id="welcome-model-search" type="search" placeholder="Название или ID" autocomplete="off"></div>
+      <label id="welcome-research-label" for="welcome-research">Модель для исследования</label>
+      <select id="welcome-research" aria-describedby="welcome-research-note"></select>
+      <div id="welcome-local-models" hidden>
+        <p id="welcome-local-status" class="field-hint" role="status"></p>
+        <section id="welcome-local-recommendation" class="local-recommendation" aria-live="polite"></section>
+        <details class="local-ratings">
+          <summary>Сравнение моделей · LLM Stats</summary>
+          <p id="local-ratings-status" class="field-hint" role="status">Проверяем доступность статистики…</p>
+          <label for="local-ratings-key">API-ключ LLM Stats</label>
+          <input id="local-ratings-key" type="password" maxlength="4096" autocomplete="off" spellcheck="false">
+          <button id="local-ratings-connect" type="button" class="text-link">Загрузить оценки</button>
+          <p class="field-hint">Ключ используется для запроса и не сохраняется. IFBench проверяет следование инструкциям.</p>
+          <a class="text-link" href="https://llm-stats.com/developer" target="_blank" rel="noopener noreferrer">Получить ключ LLM Stats</a>
+        </details>
+        <label class="sr-only" for="welcome-local-search">Найти локальную модель</label>
+        <input id="welcome-local-search" type="search" placeholder="Найти модель" autocomplete="off">
+        <div id="welcome-local-list" class="local-model-list"></div>
+      </div>
+      <div id="welcome-custom-model-field" hidden>
+        <label for="welcome-custom-model">ID модели вручную</label>
+        <input id="welcome-custom-model" maxlength="200" autocomplete="off" spellcheck="false" placeholder="имя модели у провайдера">
+      </div>
+      <p id="welcome-research-note" class="field-hint" role="status"></p>
+      <a id="welcome-cloud-card" class="text-link" target="_blank" rel="noopener noreferrer" hidden>Карточка и цены на OpenRouter</a>
+      <button id="welcome-refresh" class="text-link" type="button" hidden>Повторить проверку</button>
+    </div>
+    <div id="welcome-voice-panel" hidden>
+      <label for="welcome-voice">Модель озвучки</label>
+      <select id="welcome-voice" aria-describedby="welcome-voice-note"></select>
+      <p id="welcome-voice-note" class="field-hint" role="status"></p>
+      <button id="welcome-install" class="text-link" type="button" hidden>Подготовить Piper и голос</button>
+    </div>
+  </div>
+  <footer class="dialog-footer welcome-footer">
+    <form method="dialog" id="welcome-later"><button class="text-link">Позже</button></form>
+    <button id="welcome-back" class="text-link" type="button" hidden>Назад</button>
+    <button id="welcome-catalog" class="text-link" type="button" disabled>Сравнить все модели</button>
+    <button id="welcome-continue" class="button primary" type="button" hidden>Продолжить</button>
+  </footer>
+</dialog>
+<dialog id="model-picker" class="material-dialog model-picker" aria-labelledby="model-picker-title">
+  <header class="dialog-heading"><div><span class="dialog-eyebrow">ПОДБОР ПО РЕСУРСАМ</span><h2 id="model-picker-title">Выберите модели</h2><p>Доступность, оценка памяти и назначение показаны отдельно.</p></div><form method="dialog"><button class="icon-button" aria-label="Закрыть выбор моделей" autofocus><svg><use href="#i-close"/></svg></button></form></header>
+  <div class="dialog-content"><fieldset class="model-fieldset"><legend>Синтез речи</legend><div id="tts-model-candidates"></div></fieldset><fieldset class="model-fieldset"><legend>Исследование игры</legend><div id="research-model-candidates"></div></fieldset><p class="field-hint">Требования — предварительная оценка по свободной RAM, не гарантия запуска. Совместимость GPU и скорость нужно проверить отдельно. Ручной выбор голоса выключает автоматический режим, чтобы его не перезаписали.</p>
+    <button type="button" id="models-setup" class="button secondary">Установить Piper и голос</button>
+    <details><summary>Другие модели для работы с голосом</summary><p>XTTS v2 использует образец голоса; требуется отдельно установить совместимый движок и проверить веса, затем назначить WAV персонажу. Однокнопочной установки XTTS пока нет.</p><p><a href="https://huggingface.co/Qwen/Qwen3-TTS-12Hz-0.6B-Base" target="_blank" rel="noopener noreferrer">Qwen3-TTS Base · клонирование голоса</a> — перспективная альтернатива; подключение в приложении и совместимость с этим ПК ещё не проверены.</p><p><a href="https://huggingface.co/openai/whisper-small" target="_blank" rel="noopener noreferrer">Whisper · распознавание речи</a> — для превращения аудио в текст; в приложении пока не подключён. Это отдельная задача от синтеза голоса.</p></details>
+    <details><summary>Облачные LLM в OpenRouter</summary><p id="cloud-model-links"></p><p>На страницах моделей доступны текущие цены. Выберите OpenRouter в окне «Первый запуск» для исследования игры.</p></details></div>
+  <footer class="dialog-footer"><button class="text-link" id="refresh-model-plan">Обновить подбор</button><form method="dialog"><button class="button primary">Готово</button></form></footer>
+</dialog>
+<dialog id="appearance-dialog" class="material-dialog appearance-dialog" aria-labelledby="appearance-title" aria-describedby="appearance-description">
+  <header class="dialog-heading"><div><span class="dialog-eyebrow">ВАША СТУДИЯ</span><h2 id="appearance-title">Оформление</h2><p id="appearance-description">Выберите цветовую палитру и режим.</p></div><form method="dialog"><button class="icon-button" aria-label="Закрыть оформление" autofocus><svg><use href="#i-close"/></svg></button></form></header>
+  <div class="dialog-content">
+    <fieldset class="mode-fieldset"><legend>Режим</legend><div class="mode-options" id="mode-options">
+      <label><input type="radio" name="studio-mode" value="light"><svg><use href="#i-sun"/></svg><span>Светлый</span></label>
+      <label><input type="radio" name="studio-mode" value="dark"><svg><use href="#i-moon"/></svg><span>Тёмный</span></label>
+      <label><input type="radio" name="studio-mode" value="system"><svg><use href="#i-system"/></svg><span>Как в системе</span></label>
+    </div></fieldset>
+    <details class="custom-theme"><summary>Создать свою тему</summary>
+      <form id="custom-theme-form">
+        <label>Название <input id="custom-theme-name" type="text" required maxlength="48" placeholder="Моя палитра"></label>
+        <label>Основной цвет <input id="custom-theme-color" type="color" value="#6750a4"></label>
+        <button class="button primary" type="submit">Создать и применить</button>
+      </form>
+    </details>
+    <button type="button" class="text-link" id="custom-theme-remove" hidden>Удалить выбранную пользовательскую тему</button>
+    <fieldset class="palette-fieldset"><legend>Цветовая палитра <span id="palette-count"></span></legend><label class="sr-only" for="theme-search">Найти палитру</label><input id="theme-search" type="search" placeholder="Найти палитру" autocomplete="off"><p id="theme-search-empty" class="field-hint" hidden>Палитра не найдена.</p><div class="theme-grid" id="theme-grid"></div></fieldset>
+    <div class="appearance-summary"><svg><use href="#i-palette"/></svg><span id="appearance-summary"></span><span>Material Design 3</span></div>
+    <p id="appearance-status" role="status" aria-live="polite"></p>
+  </div>
+  <footer class="dialog-footer"><button class="text-link" id="appearance-reset">По умолчанию</button><form method="dialog"><button class="button primary">Готово</button></form></footer>
+</dialog>
+<dialog id="licenses-dialog" class="material-dialog licenses-dialog" aria-labelledby="licenses-title">
+  <header class="dialog-heading"><div><span class="dialog-eyebrow">ANYGAMEVOICE</span><h2 id="licenses-title">О проекте и лицензиях</h2></div><form method="dialog"><button class="icon-button" aria-label="Закрыть лицензии" autofocus><svg><use href="#i-close"/></svg></button></form></header>
+  <div class="dialog-content license-content">
+    <p>AnyGameVoice — открытая локальная студия озвучки. Код приложения распространяется по <a href="/assets/licenses/Apache-2.0.txt" target="_blank" rel="noopener">Apache License 2.0</a>.</p>
+    <p>Copyright 2025 AnyGameVoice Contributors.</p>
+    <h3>Интерфейс</h3><p>Палитры созданы с помощью Material Color Utilities, Copyright 2021 Google LLC, Apache 2.0. Шрифт Manrope — <a href="/assets/fonts/OFL.txt" target="_blank" rel="noopener">SIL Open Font License 1.1</a>. Библиотека генерации цветов не требуется для запуска студии.</p>
+    <h3>Движки и модели</h3><p>Piper устанавливается отдельно и вызывается как внешняя программа. Современный piper-tts использует GPL-3.0-or-later и не входит в сборку приложения. Другие движки и голосовые модели имеют собственные лицензии.</p>
+    <p><a href="/assets/licenses/THIRD_PARTY_NOTICES.txt" target="_blank" rel="noopener">Уведомления о сторонних компонентах</a></p>
+  </div><footer class="dialog-footer"><span>0.1.1-dev</span><form method="dialog"><button class="button primary">Закрыть</button></form></footer>
+</dialog>
+<dialog id="folder-picker" class="material-dialog folder-picker" aria-labelledby="folder-picker-title">
+  <header class="dialog-heading"><div><span class="dialog-eyebrow">ПАПКА ИГРЫ</span><h2 id="folder-picker-title">Выберите папку игры</h2><p>Откройте нужный каталог и нажмите «Открыть эту папку».</p></div><form method="dialog"><button class="icon-button" aria-label="Закрыть выбор папки"><svg><use href="#i-close"/></svg></button></form></header>
+  <div class="dialog-content">
+    <form id="folder-path-form" class="source-form"><input id="folder-path" aria-label="Путь к папке" autocomplete="off" spellcheck="false" autofocus><button class="button secondary" type="submit">Перейти</button></form>
+    <div id="folder-shortcuts" class="folder-shortcuts" aria-label="Найденные игровые библиотеки" hidden></div>
+    <button class="text-link" id="folder-up" type="button">На уровень выше</button>
+    <p id="folder-error" class="notice error" role="alert" hidden></p>
+    <div id="folder-list" class="folder-list" aria-label="Папки" aria-live="polite"></div>
+  </div>
+  <footer class="dialog-footer"><form method="dialog"><button class="text-link">Отмена</button></form><button class="button primary" id="folder-select" type="button" disabled>Открыть эту папку</button></footer>
+</dialog>
+<input id="project-file" class="sr-only" type="file" accept="application/json,.json" tabindex="-1">
 </body>
 </html>

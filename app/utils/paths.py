@@ -23,7 +23,10 @@ def resource_path(*parts: str) -> Path:
     base = getattr(sys, "_MEIPASS", None)
     if base:
         return Path(base, *parts)
-    return project_root().joinpath(*parts)
+    source = project_root().joinpath(*parts)
+    if source.exists():
+        return source
+    return Path(__file__).resolve().parents[1].joinpath("_resources", *parts)
 
 
 def project_root() -> Path:

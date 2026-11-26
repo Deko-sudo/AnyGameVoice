@@ -44,6 +44,8 @@ pip install -r requirements.txt
 python app/main.py
 ```
 
+Open http://127.0.0.1:8000 for the local studio. In **Оформление**, choose from 120 palettes or create a custom theme from a name and a color. Your browser remembers the selection. Run `agv --help` for CLI commands.
+
 No Python on the target machine? Grab (or build) the single-file bundle —
 see [docs/bundle.md](docs/bundle.md):
 

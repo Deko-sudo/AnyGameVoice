@@ -1,0 +1,129 @@
+"""Game engine detector.
+
+Heuristic detection based on well-known marker files.
+No game content is read beyond file names.
+"""
+
+import os
+from pathlib import Path
+
+__all__ = ["detect_engine", "scan_game_folder"]
+
+ENGINE_MARKERS = {
+    "source_lostcoast": ("lostcoast_pak_dir.vpk",),
+    "redengine": ("bin/x64/Cyberpunk2077.exe", "bin/x64/witcher3.exe", "bin/x64_dx12/witcher3.exe"),
+    "renpy": ("game/*.rpy", "game/*.rpyc", "renpy/", "game/options.rpy", "*.rpy"),
+    "rpgmaker": ("Game.rpgproject", "www/js/rpg_core.js", "js/rpg_core.js", "data/System.json"),
+    "unity": ("*_Data/", "*.assets", "Managed/Assembly-CSharp.dll"),
+    "unreal": ("*.uproject", "*.pak"),
+    "godot": ("project.godot", "*.pck", "*.dialogue"),
+}
+
+
+def _has_pattern(root: Path, pattern: str) -> bool:
+    try:
+        return any(root.glob(pattern))
+    except Exception:
+        return False
+
+
+def is_dispatch(root: Path) -> bool:
+    return ((root / 'Dispatch.exe').is_file()
+            and (root / 'Dispatch/Content/FMOD/Desktop/Master.bank').is_file()
+            and (root / 'Dispatch/Content/Paks').is_dir())
+
+
+def detect_engine(game_path: str) -> str:
+    """Detect game engine from folder markers. Returns engine id or "unknown"."""
+    if not game_path or not os.path.isdir(game_path):
+        return "unknown"
+    root = Path(game_path)
+    if is_dispatch(root):
+        return "unreal"
+    scores = {}
+    for engine, patterns in ENGINE_MARKERS.items():
+        scores[engine] = sum(1 for p in patterns if _has_pattern(root, p))
+        # also search one level deep for nested layouts
+        if scores[engine] == 0:
+            try:
+                for child in root.iterdir():
+                    # NOTE: child.glob() returns a generator (always truthy!),
+                    # so use _has_pattern which consumes it with any().
+                    if child.is_dir() and any(_has_pattern(child, p) for p in patterns):
+                        scores[engine] += 1
+                        break
+            except OSError:
+                pass
+    best = max(scores, key=lambda k: scores[k])
+    return best if scores[best] > 0 else "unknown"
+
+
+def scan_game_folder(game_path: str, max_files: int = 5000) -> dict:
+    """List folder stats: file count, total size, interesting subpaths."""
+    result: dict = {
+        "path": game_path,
+        "exists": False,
+        "engine": "unknown",
+        "files": 0,
+        "size_mb": 0.0,
+        "script_files": [],
+    }
+    if not game_path or not os.path.isdir(game_path):
+        return result
+    result["exists"] = True
+    result["engine"] = detect_engine(game_path)
+    try:
+        result["audio_files"] = _list_audio(game_path, result["engine"])
+    except Exception:
+        result["audio_files"] = []
+    total = 0
+    count = 0
+    scripts: list = []
+    for dirpath, _dirs, files in os.walk(game_path):
+        for name in files:
+            count += 1
+            fp = os.path.join(dirpath, name)
+            try:
+                total += os.path.getsize(fp)
+            except OSError:
+                pass
+            if name.endswith((".rpy", ".rpyc", ".json", ".js", ".uproject", ".godot", ".dialogue")):
+                rel = os.path.relpath(fp, game_path)
+                if len(scripts) < 50:
+                    scripts.append(rel)
+            if count >= max_files:
+                break
+        if count >= max_files:
+            break
+    result["files"] = count
+    result["size_mb"] = round(total / (1024 * 1024), 1)
+    result["script_files"] = scripts
+    return result
+
+
+def _list_audio(game_path: str, engine: str) -> list:
+    """Engine-aware audio inventory (best effort, capped)."""
+    if engine == "unity":
+        from app.studio.core.game_detector.engines.unity import list_audio_assets
+
+        return list_audio_assets(game_path)
+    if engine == "unreal":
+        from app.studio.core.game_detector.engines.unreal import list_audio_assets
+
+        return list_audio_assets(game_path)
+    if engine == "godot":
+        from app.studio.core.game_detector.engines.godot import list_audio_assets
+
+        return list_audio_assets(game_path)
+    return _generic_audio(game_path)
+
+
+def _generic_audio(game_path: str, limit: int = 200) -> list:
+    found: list = []
+    for dirpath, _dirs, files in os.walk(game_path):
+        for name in files:
+            if name.lower().endswith((".wav", ".ogg", ".mp3")):
+                found.append(os.path.relpath(os.path.join(dirpath, name), game_path))
+                if len(found) >= limit:
+                    return sorted(found)
+    return sorted(found)

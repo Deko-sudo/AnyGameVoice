@@ -1,28 +1,22 @@
-# UI
+# Local studio
 
-Local-first web interface (Phase 2).
+Run `python app/main.py ui 8000` and open http://127.0.0.1:8000.
+See [the user guide](../docs/user_guide.md) for supported games and automatic setup.
 
-## Run
+`studio.js` owns project state and generation; `automatic.js` handles automatic
+selection and jobs; `setup-components.js` handles explicit component installation
+and restoring its progress after a page reload. The UI has no CDN dependencies.
 
-```bash
-pip install -r requirements.txt
-python app/main.py ui 8000
-# open http://127.0.0.1:8000
-```
+The normal launch opens this studio on port 8000. Studio requests use the /api/studio prefix. Existing CLI and /api/mod clients keep their Phase 1.5 report and manifest formats.
 
-## Files
+Component setup API:
 
-- `index.html` — single-file SPA, no CDN, works offline. Drag & drop
-  (file-name preview; browsers hide real paths, so type the folder path),
-  Scan / Extract / Voices buttons calling the API below.
-- `../app/ui_server.py` — FastAPI app: `GET /`, `GET /api/health`,
-  `POST /api/scan`, `POST /api/extract`, `GET /api/voices`,
-  `POST /api/mod` + `GET /api/mod/{id}` (background mod jobs with
-  engine/emotion/translation options).
-- The "Generate mod" panel starts a job and polls its status.
+- `POST /api/studio/setup/plan`: read-only availability, sizes, sources and licenses.
+- `POST /api/studio/setup`: reviewed component IDs plus explicit `allow_downloads: true`.
+- `GET /api/studio/setup/{id}`: progress/result; `POST /api/studio/setup/{id}/cancel`: cancellation.
 
-Desktop shell: see `docs/tauri.md` (`src-tauri/` wraps this UI
-in a native window; the web UI also runs standalone).
+Setup and synthesis/research/mod operations are mutually exclusive. Component
+files persist in application data; task IDs do not survive a backend restart.
+Voice/SDK downloads use a pinned catalog and SHA-256 validation.
 
-Native desktop shell (Tauri) is a possible later step; the web UI
-already covers the whole Phase-1 pipeline.
+The native Tauri shell is a separate development target; see [tauri.md](../docs/tauri.md).

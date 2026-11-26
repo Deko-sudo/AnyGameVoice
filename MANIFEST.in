@@ -1,0 +1,8 @@
+recursive-include ui *.html *.css *.js *.svg *.ttf *.txt *.md
+recursive-include examples *.rpy
+include voices/presets/.gitkeep
+
+include LICENSE NOTICE THIRD_PARTY_NOTICES.md
+include scripts/generate-themes.mjs
+include scripts/theme-tools/package.json scripts/theme-tools/package-lock.json
+include scripts/theme-tools/schemes.mjs

@@ -15,7 +15,7 @@
         "title": "AnyGameVoice",
         "width": 1100,
         "height": 800,
-        "url": "/"
+        "url": "http://127.0.0.1:8000/"
       }
     ],
     "security": {

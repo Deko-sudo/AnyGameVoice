@@ -10,7 +10,7 @@ def test_index_exists():
     assert os.path.isfile(root)
     with open(root, encoding="utf-8") as fh:
         html = fh.read()
-    assert "/api/scan" in html and "/api/extract" in html and "/api/voices" in html
+    assert 'id="appearance-dialog"' in html and "/assets/studio.js" in html
 
 
 def test_app_routes():

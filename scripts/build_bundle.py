@@ -74,6 +74,10 @@ def build(name: str = "anygamevoice", mode: str = "onefile") -> str:
         "--console",
         "--name", name,
         f"--add-data=ui{sep}ui",
+        f"--add-data=examples{sep}examples",
+        f"--add-data=NOTICE{sep}.",
+        f"--add-data=THIRD_PARTY_NOTICES.md{sep}.",
+        f"--add-data=LICENSE{sep}.",
         f"--add-data=voices{sep}voices",
         "--paths", REPO,
     ]
