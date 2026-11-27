@@ -4,6 +4,9 @@
   let steamGames = [];
   let gameLibraries = [];
   let discoveryPromise = null;
+  let discoveryState = 'searching';
+  let discoveryError = '';
+  let pickerOpener = null;
   let startPending = false;
   let retryTrial = false;
   function show(phase, title, detail, error = false) {
@@ -131,47 +134,93 @@
     $('help-demo').disabled = occupied;
     document.querySelectorAll('#auto-choices button').forEach(button => { button.disabled = occupied; });
   }
+  function withPeriod(text) { return /[.!?]$/.test(text) ? text : `${text}.`; }
+  function pickerMessage(text, error = false) {
+    $('steam-list').replaceChildren(el('p', error ? 'notice error' : 'muted', text));
+  }
+  function gameOrder(a, b) {
+    const known = (String(a.appid) === '340' ? 0 : 1) - (String(b.appid) === '340' ? 0 : 1);
+    return known || String(a.name || '').localeCompare(String(b.name || ''), 'ru');
+  }
+  function setChoiceState() {
+    const library = $('steam-games');
+    const folder = $('browse-game');
+    const found = discoveryState === 'found';
+    library.classList.toggle('primary', found);
+    library.classList.toggle('secondary', !found);
+    folder.classList.toggle('primary', !found);
+    folder.classList.toggle('secondary', found);
+    library.textContent = found ? `Выбрать из библиотеки (${steamGames.length})`
+      : discoveryState === 'error' ? 'Повторить поиск'
+      : discoveryState === 'empty' ? 'Найти игры' : 'Ищем игры…';
+    $('source-hint').textContent = found
+      ? `Найдено игр: ${steamGames.length} · библиотек: ${gameLibraries.length}. Выберите игру или укажите папку.`
+      : discoveryState === 'error' ? `${withPeriod(discoveryError)} Можно выбрать папку вручную.`
+      : discoveryState === 'empty' ? 'Игры автоматически не найдены. Можно выбрать папку вручную.'
+      : 'Ищем установленные игры…';
+  }
   function filterSteam() {
+    if (discoveryState !== 'found') return;
     const query = $('steam-filter').value.trim().toLocaleLowerCase();
-    const games = steamGames.filter(game => game.name.toLocaleLowerCase().includes(query));
+    const games = steamGames.filter(game => String(game.name || '').toLocaleLowerCase().includes(query));
     $('steam-list').replaceChildren();
     for (const game of games) {
       const button = el('button', 'steam-game'); button.type = 'button';
       button.append(icon('folder'), el('span', '', game.name));
       button.append(el('small', '', game.source || 'Steam'));
-      if (game.appid === '340') button.append(el('small', '', 'Короткая игра · установка мода поддерживается'));
+      if (String(game.appid) === '340') button.append(el('small', '', 'Короткая игра · установка мода поддерживается'));
       button.addEventListener('click', () => {
         $('steam-picker').close(); $('game-path').value = game.path; loadGame();
       });
       $('steam-list').append(button);
     }
-    if (!games.length) $('steam-list').append(el('p', 'muted', steamGames.length ? 'По этому названию игр нет.' : 'Игры не найдены в доступных библиотеках. Выберите папку вручную.'));
+    if (!games.length) pickerMessage('По этому названию игр нет.');
   }
   async function discoverGames() {
     if (discoveryPromise) return discoveryPromise;
+    discoveryState = 'searching';
+    setChoiceState();
     discoveryPromise = api('/api/studio/games').then(data => {
-      steamGames = data.games; gameLibraries = data.libraries;
-      $('steam-games').textContent = steamGames.length ? `Найденные игры (${steamGames.length})` : 'Найти игры';
-      $('source-hint').textContent = steamGames.length
-        ? `Найдено игр: ${steamGames.length} · библиотек: ${gameLibraries.length}. Выберите игру или укажите папку.`
-        : 'Игры автоматически не найдены. Можно выбрать папку вручную.';
+      steamGames = [...(data.games || [])].sort(gameOrder);
+      gameLibraries = data.libraries || [];
+      discoveryState = steamGames.length ? 'found' : 'empty';
+      setChoiceState();
       return data;
+    }).catch(error => {
+      discoveryState = 'error';
+      discoveryError = friendlyError(error);
+      steamGames = []; gameLibraries = [];
+      setChoiceState();
+      throw error;
     }).finally(() => { discoveryPromise = null; });
     return discoveryPromise;
   }
   async function openSteam() {
-    $('steam-filter').value = ''; $('steam-list').replaceChildren(el('p', 'muted', 'Ищем установленные игры…'));
+    if ($('steam-picker').open) return;
+    pickerOpener = document.activeElement || $('steam-games');
+    $('steam-filter').value = ''; $('steam-filter').hidden = true;
+    $('game-libraries').textContent = 'Ищем библиотеки…';
+    pickerMessage(discoveryState === 'error' ? 'Повторяем поиск…' : 'Ищем установленные игры…');
     $('steam-picker').showModal();
     try {
       await discoverGames();
+      if (!$('steam-picker').open) return;
       $('game-libraries').textContent = gameLibraries.length ? `Найденные папки: ${gameLibraries.join(' · ')}` : 'Библиотеки автоматически не найдены.';
-      filterSteam();
-    } catch (error) { $('steam-list').replaceChildren(el('p', 'notice error', friendlyError(error))); }
+      if (discoveryState === 'empty') pickerMessage('Игры не найдены в доступных библиотеках. Выберите папку вручную.');
+      else { $('steam-filter').hidden = false; filterSteam(); }
+    } catch (error) {
+      pickerMessage(`${withPeriod(friendlyError(error))} Выберите папку вручную.`, true);
+    }
   }
-  discoverGames().catch(() => { $('source-hint').textContent = 'Не удалось найти игры автоматически. Выберите папку вручную.'; });
+  discoverGames().catch(() => {});
   try { $('renpy-sdk').value = localStorage.getItem('agv-renpy-sdk') || ''; } catch {}
   $('renpy-sdk').addEventListener('change', () => { try { localStorage.setItem('agv-renpy-sdk', $('renpy-sdk').value.trim()); } catch {} });
   $('steam-games').addEventListener('click', openSteam);
+  $('steam-picker').addEventListener('close', () => {
+    const opener = pickerOpener;
+    pickerOpener = null;
+    if (opener?.isConnected && !opener.disabled) opener.focus();
+  });
   $('steam-filter').addEventListener('input', filterSteam);
   $('help-button').addEventListener('click', () => $('help-dialog').showModal());
   $('help-choose').addEventListener('click', () => { $('help-dialog').close(); openSteam(); });

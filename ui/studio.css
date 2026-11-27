@@ -101,6 +101,8 @@ textarea{resize:vertical;min-height:92px}
 .button.secondary:hover{background:var(--md-secondary-container);border-color:var(--md-outline)}
 .button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:800}
 .button.primary:hover{background:var(--md-primary);border-color:var(--md-primary)}
+.source-choices{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
+.source-choices .button{flex:1;min-width:180px}
 .source-help{display:flex;align-items:center;justify-content:space-between;gap:15px;color:var(--faint);font-size:9px;margin-top:10px;line-height:1.6}
 .text-link{border:0;padding:0;background:transparent;color:var(--accent);font-size:10px;text-decoration:none}
 .text-link:hover{text-decoration:underline;text-underline-offset:4px}
@@ -832,3 +834,16 @@ progress,progress::-webkit-progress-bar { background:var(--md-secondary-containe
 .dubbing-settings legend { padding-inline:.4rem; }
 .dubbing-settings :is(select,input) { width:100%; min-width:0; }
 #dub-options:not([hidden]) { display:grid; gap:.4rem; }
+
+/* On phones the game choice is the first action on an empty project. */
+@media (max-width:600px) {
+  .content { display:flex; flex-direction:column; }
+  .source-panel { order:-1; margin-bottom:18px; padding:16px; }
+  .source-content>label { margin-bottom:6px; }
+  .source-choices { display:grid; grid-template-columns:minmax(0,1fr); gap:8px; margin-top:8px; }
+  .source-choices .button { width:100%; min-width:0; justify-content:space-between; }
+  .source-help { margin-top:8px; font-size:10px; }
+  .source-help #source-hint { flex-basis:100%; }
+  .project-heading { margin-bottom:18px; }
+  .project-heading p { font-size:12px; }
+}
