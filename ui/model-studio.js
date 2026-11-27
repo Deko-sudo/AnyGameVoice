@@ -1052,6 +1052,7 @@
   document.addEventListener('agv:controls', syncControls);
   function translationDefaults() {
     if (welcomePreferences?.mode !== 'cloud') return {provider:'ollama', translation_model:welcomePreferences?.research || ''};
+    if (!savedCloudResearch()) return {provider:'', translation_model:''};
     return {provider:welcomePreferences.cloudProvider, translation_model:welcomePreferences.cloudResearch || '',
       base_url:welcomePreferences.cloudProvider === 'custom' ? welcomePreferences.custom?.baseUrl || '' : ''};
   }

@@ -1,7 +1,7 @@
 // Keep saved project choices separate from session-only provider credentials.
 function setDubbing(value = {}) {
   $('dub-direction').value = value.translate_to === 'ru' ? 'ru' : '';
-  $('dub-provider').value = value.provider || 'ollama';
+  $('dub-provider').value = value.provider ?? 'ollama';
   $('dub-model').value = value.translation_model || '';
   $('dub-endpoint').value = value.base_url || '';
   $('dub-key').value = '';
@@ -54,6 +54,7 @@ function dubbingRequest(trial) {
 document.addEventListener('DOMContentLoaded', () => {
   for (const id of ['dub-direction','dub-provider','dub-model','dub-endpoint']) {
     $(id).addEventListener('input', () => {
+      if (id === 'dub-provider') $('dub-model').value = '';
       if (id === 'dub-provider' || id === 'dub-endpoint') $('dub-key').value = '';
       if ($('dub-direction').value) $('voice-language').value = 'ru';
       updateControls();

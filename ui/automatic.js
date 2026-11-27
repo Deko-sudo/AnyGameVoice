@@ -209,6 +209,7 @@
       if (discoveryState === 'empty') pickerMessage('Игры не найдены в доступных библиотеках. Выберите папку вручную.');
       else { $('steam-filter').hidden = false; filterSteam(); }
     } catch (error) {
+      $('game-libraries').textContent = 'Поиск библиотек завершился ошибкой.';
       pickerMessage(`${withPeriod(friendlyError(error))} Выберите папку вручную.`, true);
     }
   }
@@ -216,6 +217,12 @@
   try { $('renpy-sdk').value = localStorage.getItem('agv-renpy-sdk') || ''; } catch {}
   $('renpy-sdk').addEventListener('change', () => { try { localStorage.setItem('agv-renpy-sdk', $('renpy-sdk').value.trim()); } catch {} });
   $('steam-games').addEventListener('click', openSteam);
+  $('steam-picker').addEventListener('keydown', event => {
+    if (event.key === 'Escape' && !event.isComposing) {
+      event.preventDefault();
+      $('steam-picker').close();
+    }
+  });
   $('steam-picker').addEventListener('close', () => {
     const opener = pickerOpener;
     pickerOpener = null;
