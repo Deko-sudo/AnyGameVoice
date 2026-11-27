@@ -2,12 +2,13 @@
 
 from collections import Counter
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
-from dataclasses import asdict
+from dataclasses import asdict, replace
 import hashlib
 import json
 import os
 from pathlib import Path
 import re
+import shutil
 import tempfile
 import threading
 import wave
@@ -64,7 +65,8 @@ def _publish_owned(temporary: str, destination: Path, expected_hash: str | None)
 def run_batch(folder: str, out: str, voice: str = '', engine: str = 'piper', workers: int = 2,
               emotion: str = 'neutral', translate_to: str = '', provider: str = 'ollama',
               language: str = 'en', character_voices: dict | None = None,
-              on_progress=None, cancel_event=None, voice_blend=None) -> dict:
+              on_progress=None, cancel_event=None, voice_blend=None, source_lang='auto',
+              translation_model='', base_url='', api_key='', trial=False) -> dict:
     """Export audio only. This does not install anything into a game."""
     game = Path(folder).expanduser().resolve()
     output = Path(out).expanduser().resolve()
@@ -79,15 +81,25 @@ def run_batch(folder: str, out: str, voice: str = '', engine: str = 'piper', wor
         raise ValueError(f'No supported dialogue found (engine: {detect_engine(str(game))}).')
     if len(lines) > 10000:
         raise ValueError('This preview release supports up to 10,000 dialogue lines per project.')
+    trial_dir = output / '.agv-trial'
+    if trial_dir.is_symlink():
+        raise ValueError('Каталог пробного дубляжа не может быть символической ссылкой.')
+    if trial:
+        lines = lines[:3]
+        output = trial_dir
     voices = character_voices or {}
     policy = VoiceBlend.model_validate(voice_blend) if voice_blend is not None else VoiceBlend()
     blends = {}
     for selected in {voices.get(line.speaker) or voice for line in lines}:
         generator.validate_synthesis(engine, selected)
+        if translate_to and engine == 'piper' and Path(str(selected) + '.json').is_file():
+            config = json.loads(Path(str(selected) + '.json').read_text(encoding='utf-8'))
+            voice_lang = config.get('language', {}).get('code', '').replace('-', '_').split('_')[0]
+            if voice_lang and voice_lang != translate_to.split('-')[0]:
+                raise ValueError(f'Язык голоса Piper ({voice_lang}) отличается от языка перевода ({translate_to}). Выберите подходящий голос.')
         blends[selected] = policy.for_voice(engine, selected)
+    translation = [1, source_lang, translate_to, provider, translation_model, base_url] if translate_to else None
     if translate_to:
-        from app.studio.core.translate import translate_lines
-        lines = translate_lines(lines, translate_to, provider=provider)
         language = translate_to
     cancelled = cancel_event or threading.Event()
     output.mkdir(parents=True, exist_ok=True)
@@ -107,6 +119,12 @@ def run_batch(folder: str, out: str, voice: str = '', engine: str = 'piper', wor
             if old.get('schema') != 1 or old.get('game_path') != str(game):
                 raise ValueError('Output folder contains a different project. Choose another folder.')
         previous = {item['id']: item for item in old.get('lines', [])}
+        trial_rows = {}
+        trial_manifest = trial_dir / 'anygamevoice.json'
+        if not trial and trial_manifest.is_file() and not trial_manifest.is_symlink():
+            sample = json.loads(trial_manifest.read_text(encoding='utf-8'))
+            if sample.get('schema') == 1 and sample.get('game_path') == str(game):
+                trial_rows = {row['id']: row for row in sample.get('lines', [])}
         owned_audio = dict(old.get('owned_audio_sha256', {}))
         for item in old.get('lines', []):
             if item.get('sha256'):
@@ -120,11 +138,29 @@ def run_batch(folder: str, out: str, voice: str = '', engine: str = 'piper', wor
                 owned_audio[ident] = pending_hash
         counts = Counter()
         items = []
-        for line in lines:
+        for index, line in enumerate(lines):
             identity = [line.source_file, line.speaker, line.metadata.get('original_text', line.text)]
             occurrence = counts[tuple(identity)]
             counts[tuple(identity)] += 1
             line_id = _key([*identity, occurrence])[:20]
+            if translation:
+                if cancelled.is_set():
+                    raise RuntimeError('Перевод отменён.')
+                origin = line.text
+                cached = next((r for r in (previous.get(line_id), trial_rows.get(line_id))
+                               if r and r.get('translation') == translation
+                               and r.get('metadata', {}).get('original_text') == origin and r.get('text')), None)
+                if cached:
+                    line = replace(line, text=cached['text'], metadata={**line.metadata,
+                                   'original_text': origin, 'translated_to': translate_to})
+                else:
+                    from app.studio.core.translate import translate_lines
+                    try:
+                        line = translate_lines([line], translate_to, source_lang, provider, api_key,
+                                               translation_model, base_url)[0]
+                    except Exception:
+                        raise RuntimeError(f'Перевод реплики {index + 1} не получен. Проверьте модель, доступ и лимит провайдера.') from None
+                lines[index] = line
             selected_voice = voices.get(line.speaker) or voice
             model = Path(selected_voice).expanduser()
             model_state = []
@@ -132,19 +168,21 @@ def run_batch(folder: str, out: str, voice: str = '', engine: str = 'piper', wor
                 if fp.is_file():
                     model_state.append([str(fp.resolve()), fp.stat().st_size, fp.stat().st_mtime_ns])
             recipe = [line.text, selected_voice, model_state, engine, emotion, language]
+            if translation:
+                recipe.append(translation)
             blend = blends[selected_voice]
             if blend is not None:
                 base_path, strength = blend
                 stat = Path(base_path).stat()
                 recipe.append(['xtts-blend-v1', base_path, strength, stat.st_size, stat.st_mtime_ns])
             fingerprint = _key(recipe)
-            items.append({**asdict(line), 'id': line_id, 'voice': selected_voice,
+            items.append({**asdict(line), 'translation': translation, 'id': line_id, 'voice': selected_voice,
                           'filename': f'{line_id}.wav', 'fingerprint': fingerprint,
                           'status': 'pending', 'error': '', 'duration': 0.0})
         result = {'schema': 1, 'game_path': str(game), 'out': str(output),
                   'engine': engine, 'voice': voice, 'character_voices': voices,
                   'emotion': emotion, 'language': language, 'status': 'running',
-                  'total': len(items), 'succeeded': 0, 'failed': 0, 'cached': 0,
+                  'trial': trial, 'total': len(items), 'succeeded': 0, 'failed': 0, 'cached': 0,
                   'cancelled': 0, 'lines': items, 'owned_audio_sha256': owned_audio,
                   'pending_audio_sha256': {}}
 
@@ -182,15 +220,23 @@ def run_batch(folder: str, out: str, voice: str = '', engine: str = 'piper', wor
             try:
                 blend = blends[item['voice']]
                 options = {'blend': blend} if blend is not None else {}
-                generator.generate_voice_to_file(item['text'], temporary, voice=item['voice'], engine=engine,
-                                                 emotion=emotion, language=language, **options)
+                sample = trial_rows.get(item['id'], {})
+                sample_file = trial_dir / item['filename']
+                reuse = (sample.get('status') == 'done' and sample.get('fingerprint') == item['fingerprint']
+                         and sample_file.is_file() and not sample_file.is_symlink())
+                if reuse:
+                    shutil.copyfile(sample_file, temporary)
+                    reuse = _digest(Path(temporary)) == sample.get('sha256')
+                if not reuse:
+                    generator.generate_voice_to_file(item['text'], temporary, voice=item['voice'], engine=engine,
+                                                     emotion=emotion, language=language, **options)
                 duration = wav_duration(temporary)
                 destination = output / item['filename']
                 with manifest_lock:
                     result['pending_audio_sha256'][item['id']] = _digest(Path(temporary))
                     publish()
                 _publish_owned(temporary, destination, owned_audio.get(item['id']))
-                return {'status': 'done', 'duration': duration, 'sha256': _digest(destination)}
+                return {'status': 'done', 'cached': reuse, 'duration': duration, 'sha256': _digest(destination)}
             finally:
                 Path(temporary).unlink(missing_ok=True)
 

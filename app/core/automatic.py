@@ -81,17 +81,19 @@ def prepare_game(path):
     return result
 
 
-def automatic_settings(path, sdk=None, selection=None):
+def automatic_settings(path, sdk=None, selection=None, target_lang='', trial=False):
     from app.core.scanner.model_planner import build_plan
     from app.studio.core.tts.generator import validate_synthesis
     data = prepare_game(path)
     if not data['ready']:
         raise ValueError(data['issue'])
     from app.core.installation import check_target
-    target = check_target(data['path'], data['engine'], sdk)
+    target = {'install_engine': None} if trial else check_target(data['path'], data['engine'], sdk)
     if selection is not None:
         blend_settings = selection.get('voice_blend')
         selection = {key: selection[key] for key in ('voice', 'engine', 'emotion', 'language', 'out', 'workers', 'character_voices')}
+        if target_lang:
+            selection['language'] = target_lang
         output = Path(selection['out']).expanduser().resolve()
         root = Path(data['path']).resolve()
         if output == root or root in output.parents:
@@ -106,19 +108,20 @@ def automatic_settings(path, sdk=None, selection=None):
                 policy.for_voice(selection['engine'], selected)
             selection['voice_blend'] = policy.model_dump()
         return {'path': data['path'], **selection,
-                'install_source': data['engine'] == 'source_lostcoast',
+                'install_source': not trial and data['engine'] == 'source_lostcoast',
                 'install_engine': target['install_engine'],
                 **({'renpy_sdk': target['renpy_sdk']} if 'renpy_sdk' in target else {})}
-    plan = build_plan(data['language'])
+    language = target_lang or data['language']
+    plan = build_plan(language)
     voice = plan['selected_tts']
     if not voice:
         installed = [item for item in plan['tts'] if item['installed'] and item['engine'] == 'piper']
         if installed:
             reason = next((item['reason'] for item in installed if item['fit'] != 'unsupported'), installed[0]['reason'])
-            raise ValueError(f'Автоматический запуск остановлен: подходящий голос не найден ({data["language_name"]}). {reason} Откройте «Настроить вручную» или инструкцию «Как пользоваться».')
-        raise ValueError(f'Для автоматической озвучки нужен установленный Piper и голос: {data["language_name"]}. Откройте «Как пользоваться» → «Если голос не найден».')
+            raise ValueError(f'Автоматический запуск остановлен: подходящий голос не найден ({language}). {reason} Откройте «Настроить вручную» или инструкцию «Как пользоваться».')
+        raise ValueError(f'Для автоматической озвучки нужен установленный Piper и голос: {language}. Откройте «Как пользоваться» → «Если голос не найден».')
     validate_synthesis(voice['engine'], voice['voice'])
     return {'path': data['path'], 'out': data['suggested_out'], 'voice': voice['voice'], 'engine': voice['engine'],
-            'language': data['language'], 'emotion': 'neutral', 'workers': 1, 'character_voices': {},
-            'install_source': data['engine'] == 'source_lostcoast',
+            'language': language, 'emotion': 'neutral', 'workers': 1, 'character_voices': {},
+            'install_source': not trial and data['engine'] == 'source_lostcoast',
             'install_engine': target['install_engine'], **({'renpy_sdk': target['renpy_sdk']} if 'renpy_sdk' in target else {})}

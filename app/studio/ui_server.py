@@ -32,6 +32,9 @@ def start_mod_job(params: dict) -> int:
     """Start one batch at a time, with progress and explicit terminal status."""
     from app.core.pipeline import run_batch
 
+    if params.get('base_url'):
+        from app.core.cloud_providers import _custom_url
+        _custom_url(params['base_url'], '')
     with _JOBS_LOCK:
         if _setup_busy():
             raise ValueError('Дождитесь завершения подготовки компонентов.')
@@ -46,7 +49,7 @@ def start_mod_job(params: dict) -> int:
         job_id = next(_JOB_SEQ)
         install_engine = params.get('install_engine') or ('source_lostcoast' if params.get('install_source') else None)
         _JOBS[job_id] = {'id': job_id, 'game_path': str(Path(params['path']).expanduser().resolve()),
-                         'install_engine': install_engine, 'stage': 'preparing' if install_engine else 'synthesis', 'status': 'running', 'total': 0,
+                         'trial': bool(params.get('trial')), 'install_engine': install_engine, 'stage': 'preparing' if install_engine else 'synthesis', 'status': 'running', 'total': 0,
                          'succeeded': 0, 'failed': 0, 'cached': 0, 'error': '', 'result': None}
         _CANCEL[job_id] = threading.Event()
         # Keep only a bounded history; audio is still present in the output folder.
@@ -76,7 +79,9 @@ def start_mod_job(params: dict) -> int:
                              provider=params.get('provider', 'ollama'), language=params.get('language', 'en'),
                              character_voices=params.get('character_voices', {}),
                              on_progress=progress, cancel_event=_CANCEL[job_id],
-                             voice_blend=params.get('voice_blend'))
+                             voice_blend=params.get('voice_blend'), trial=params.get('trial', False),
+                             source_lang=params.get('source_lang', 'auto'), translation_model=params.get('translation_model', ''),
+                             base_url=params.get('base_url', ''), api_key=params.get('api_key', ''))
             if not isinstance(result, dict) or result.get('status') not in {'done', 'partial', 'failed', 'cancelled'}:
                 raise RuntimeError('The pipeline did not return a valid batch result.')
             if install_engine and result['status'] == 'done' and not _CANCEL[job_id].is_set():
@@ -133,6 +138,15 @@ def create_app():
     class ModelRequest(BaseModel):
         language: str = Field(default='ru', min_length=2, max_length=12)
 
+    class TranslationSettings(BaseModel):
+        source_lang: str = Field(default='auto', max_length=12)
+        translate_to: str = Field(default='', max_length=12)
+        provider: Literal['ollama', 'openai', 'anthropic', 'groq', 'mistral', 'deepseek', 'openrouter', 'custom'] = 'ollama'
+        translation_model: str = Field(default='', max_length=200)
+        base_url: str = Field(default='', max_length=2048)
+        api_key: str = Field(default='', max_length=4096, repr=False)
+        trial: bool = False
+
     class SelectedAutoSettings(BaseModel):
         voice: str = Field(default='', max_length=4096)
         engine: Literal['piper', 'xtts', 'bark', 'silero'] = 'piper'
@@ -143,7 +157,7 @@ def create_app():
         character_voices: dict[str, str] = Field(default_factory=dict, max_length=200)
         voice_blend: VoiceBlend | None = None
 
-    class AutoRequest(FolderRequest):
+    class AutoRequest(FolderRequest, TranslationSettings):
         sdk: str = Field(default='', max_length=4096)
         selection: SelectedAutoSettings | None = None
 
@@ -179,12 +193,10 @@ def create_app():
         language: str = Field(default='en', min_length=2, max_length=12)
         voice_blend: VoiceBlend | None = None
 
-    class ModRequest(SynthesisRequest):
+    class ModRequest(SynthesisRequest, TranslationSettings):
         path: str = Field(min_length=1, max_length=4096)
         out: str = Field(min_length=1, max_length=4096)
         workers: int = Field(default=2, ge=1, le=4)
-        translate_to: str = Field(default='', max_length=12)
-        provider: Literal['ollama', 'openai', 'anthropic', 'groq', 'mistral', 'deepseek'] = 'ollama'
         character_voices: dict[str, str] = Field(default_factory=dict, max_length=200)
 
     class PreviewRequest(SynthesisRequest):
@@ -301,9 +313,11 @@ def create_app():
         if _setup_busy():
             raise HTTPException(409, 'Дождитесь завершения подготовки компонентов.')
         from app.core.automatic import automatic_settings
-        params = automatic_settings(payload.path, sdk=payload.sdk or None,
+        params = automatic_settings(payload.path, sdk=payload.sdk or None, target_lang=payload.translate_to, trial=payload.trial,
                                     selection=payload.selection.model_dump() if payload.selection is not None else None)
-        return {'job_id': start_mod_job(params), 'settings': params}
+        params.update(payload.model_dump(include=set(TranslationSettings.model_fields)))
+        job_id = start_mod_job(params)
+        return {'job_id': job_id, 'settings': {k: v for k, v in params.items() if k != 'api_key'}}
 
     @app.post('/api/studio/setup/plan')
     def component_plan(payload: SetupRequest):

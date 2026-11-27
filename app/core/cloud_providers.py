@@ -536,13 +536,18 @@ def custom_models(base_url, token):
 
 
 def research_completion(provider, model, prompt, system, schema, base_url='', api_key=''):
+    instruction = f'{system} Верни только JSON этой схемы: {json.dumps(schema, ensure_ascii=False)}'
+    return chat_completion(provider, model, prompt, instruction, base_url, api_key)
+
+
+def chat_completion(provider, model, prompt, system, base_url='', api_key=''):
     if not MODEL_ID.fullmatch(model):
         raise ValueError('Укажите корректный ID облачной модели.')
     if provider == 'openrouter':
         url = OPENROUTER_URL + '/chat/completions'
         api_key = api_key or os.getenv('OPENROUTER_API_KEY', '')
         if not api_key:
-            raise ValueError('Для исследования через OpenRouter укажите API-ключ.')
+            raise ValueError('Для запроса через OpenRouter укажите API-ключ.')
     elif provider == 'custom':
         url = _custom_url(base_url, '/chat/completions')
     else:
@@ -551,7 +556,7 @@ def research_completion(provider, model, prompt, system, schema, base_url='', ap
         status, data = _request_json('POST', url, api_key, {
             'model': model, 'stream': False,
             'messages': [
-                {'role': 'system', 'content': f'{system} Верни только JSON этой схемы: {json.dumps(schema, ensure_ascii=False)}'},
+                {'role': 'system', 'content': system},
                 {'role': 'user', 'content': prompt},
             ],
         }, read_timeout=120)
@@ -566,6 +571,6 @@ def research_completion(provider, model, prompt, system, schema, base_url='', ap
     try:
         content = data['choices'][0]['message']['content'].strip()
     except (IndexError, KeyError, TypeError, AttributeError) as exc:
-        raise RuntimeError('Облачная модель не вернула текст исследования.') from exc
+        raise RuntimeError('Облачная модель не вернула текст ответа.') from exc
     fenced = re.fullmatch(r'```(?:json)?\s*(.+?)\s*```', content, flags=re.DOTALL | re.IGNORECASE)
     return fenced[1] if fenced else content

@@ -827,3 +827,8 @@ progress,progress::-webkit-progress-bar { background:var(--md-secondary-containe
 .custom-theme form { display: flex; flex-wrap: wrap; align-items: end; gap: .75rem; padding-block: .75rem; }
 .custom-theme label { display: grid; gap: .25rem; }
 .custom-theme input[type="color"] { width: 100%; min-height: 2.5rem; }
+
+.dubbing-settings { display:grid; gap:.5rem; min-width:0; margin:.5rem 1rem 1rem; padding:1rem; border:1px solid var(--md-outline-variant); border-radius:12px; }
+.dubbing-settings legend { padding-inline:.4rem; }
+.dubbing-settings :is(select,input) { width:100%; min-width:0; }
+#dub-options:not([hidden]) { display:grid; gap:.4rem; }

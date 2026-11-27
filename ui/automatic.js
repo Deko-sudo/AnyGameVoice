@@ -5,6 +5,7 @@
   let gameLibraries = [];
   let discoveryPromise = null;
   let startPending = false;
+  let retryTrial = false;
   function show(phase, title, detail, error = false) {
     $('auto-title').textContent = title;
     $('auto-detail').textContent = detail;
@@ -29,8 +30,9 @@
     $('auto-retry').hidden = true;
     notice(data.issue, 'error');
   }
-  async function start(useSelection = false) {
+  async function start(useSelection = false, trial = false) {
     if (startPending || state.setupBusy || state.loading || state.busy || running() || !state.lines.length) return;
+    retryTrial = trial;
     startPending = true; state.busy = true; updateControls();
     $('auto-retry').hidden = true;
     show('voice', 'Проверяем готовность', useSelection ? 'Проверяем выбранные голоса и возможность установки.' : 'Определяем язык реплик, проверяем модель и свободную память.');
@@ -38,8 +40,9 @@
     try {
       await refreshVoices();
       const chosen = settings();
-      const selection = useSelection ? {voice: chosen.voice, engine: chosen.engine, emotion: chosen.emotion, language: chosen.language, out: chosen.out, workers: chosen.workers, character_voices: chosen.character_voices, voice_blend: chosen.voice_blend} : null;
-      const data = await api('/api/studio/auto', {path: state.game, sdk: $('renpy-sdk').value.trim(), selection});
+      const translation = dubbingRequest(trial);
+      const selection = useSelection || (translation.translate_to && chosen.voice) ? {voice: chosen.voice, engine: chosen.engine, emotion: chosen.emotion, language: chosen.language, out: chosen.out, workers: chosen.workers, character_voices: chosen.character_voices, voice_blend: chosen.voice_blend} : null;
+      const data = await api('/api/studio/auto', {path: state.game, sdk: $('renpy-sdk').value.trim(), selection, ...translation});
       const params = data.settings;
       $('tts-engine').value = params.engine; $('voice-select').value = ''; $('voice-path').value = params.voice;
       $('voice-language').value = params.language; $('voice-emotion').value = params.emotion;
@@ -59,11 +62,16 @@
         $('manual-settings').open = true;
         notice(`${message} Проверьте выбранный голос и назначения персонажей, затем повторите запуск.`, 'error');
       } else if (/SDK|Piper|голос|FFmpeg|renpy.sh/.test(message)) {
-        window.agvSetup?.offer(useSelection ? 'selected' : 'auto');
+        window.agvSetup?.offer(trial ? null : useSelection ? 'selected' : 'auto');
       }
     } finally { startPending = false; state.busy = false; updateControls(); }
   }
   function job(data) {
+    if ('trial' in data) retryTrial = data.trial;
+    if (data.result?.trial) {
+      show('voice', 'Пробный дубляж', 'Послушайте реплики в разделе «Генерация». Полный запуск доступен в панели озвучки.', data.status !== 'done');
+      return;
+    }
     if (activeStatuses.has(data.status)) {
       const name = data.install_engine === 'renpy' ? 'Ren’Py' : 'Lost Coast';
       if (data.stage === 'preparing' && data.status !== 'cancelling') show('voice', 'Проверяем совместимость игры', 'До записи проверяем сценарии, идентификаторы реплик и возможность безопасной установки.');
@@ -168,7 +176,7 @@
   $('help-button').addEventListener('click', () => $('help-dialog').showModal());
   $('help-choose').addEventListener('click', () => { $('help-dialog').close(); openSteam(); });
   $('help-demo').addEventListener('click', () => { $('help-dialog').close(); openDemo(); });
-  $('auto-retry').addEventListener('click', () => start(!$('auto-mode').checked));
+  $('auto-retry').addEventListener('click', () => start(!$('auto-mode').checked, retryTrial));
   $('auto-selected').addEventListener('click', () => start(true));
   for (const id of ['tts-engine','voice-select','voice-path','voice-language','voice-emotion','output-path','worker-count']) $(id).addEventListener('change', () => {
     if (state.busy || state.loading || running()) return;
@@ -185,6 +193,7 @@
   window.agvAuto = {
     start, remember, restore,
     prepare() {
+      retryTrial = false;
       $('auto-choices').hidden = true; $('auto-retry').hidden = true;
       show('dialogue', 'Проверяем игру и ищем диалоги', 'Если выбрана общая папка, найдём игру внутри или предложим список.');
     },
@@ -192,6 +201,10 @@
     async loaded({data, restored}) {
       if (!$('auto-mode').checked || restored?.schema) {
         show('voice', 'Игра открыта — настройки доступны', `${data.total} реплик. Выберите голос и нажмите «Создать озвучку», когда будете готовы.`);
+        return;
+      }
+      if ($('dub-direction').value) {
+        show('voice', 'Можно послушать пробный дубляж', data.install_supported ? 'Проверьте переводчик и голос. После пробы можно установить полный дубляж.' : 'Проверьте переводчик и голос. Для этой игры будут созданы WAV-файлы для отдельного подключения.');
         return;
       }
       await start();

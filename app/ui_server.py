@@ -32,9 +32,14 @@ def start_mod_job(params: dict) -> int:
     """Run cmd_mod in a background thread. Returns job id (testable, no HTTP)."""
     from app.main import cmd_mod
 
+    if params.get("base_url"):
+        from app.core.cloud_providers import _custom_url
+        _custom_url(params["base_url"], "")
+    public_fields = ("path", "out", "voice", "engine", "workers", "emotion", "translate_to",
+                     "provider", "source_lang", "translation_model", "base_url")
     job_id = next(_JOB_SEQ)
     with _JOBS_LOCK:
-        _JOBS[job_id] = {"id": job_id, "status": "running", "params": params, "error": ""}
+        _JOBS[job_id] = {"id": job_id, "status": "running", "params": {k: params[k] for k in public_fields if k in params}, "error": ""}
     def _run():
         try:
             report = cmd_mod(
@@ -46,6 +51,9 @@ def start_mod_job(params: dict) -> int:
                 emotion=params.get("emotion", "neutral"),
                 translate_to=params.get("translate_to", ""),
                 provider=params.get("provider", "ollama"),
+                source_lang=params.get("source_lang", "auto"),
+                translation_model=params.get("translation_model", ""),
+                api_key=params.get("api_key", ""), base_url=params.get("base_url", ""),
             )
         except Exception as exc:  # noqa: BLE001 - surfaced via status
             with _JOBS_LOCK:

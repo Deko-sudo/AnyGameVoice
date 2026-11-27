@@ -74,7 +74,7 @@ function synthesisParams(voice = selectedVoice()) {
 }
 function settings() {
   return {schema: 'anygamevoice-project', version: 1, automatic: !!$('auto-mode')?.checked, renpy_sdk: $('renpy-sdk').value.trim(), path: state.game || $('game-path').value.trim(), out: $('output-path').value.trim(),
-    ...synthesisParams(), voice_blend: state.voiceBlend, workers: Number($('worker-count').value), character_voices: {...state.assignments}, demo: state.demo, studio_context: window.agvModels?.snapshot() || {}};
+    ...synthesisParams(), ...dubbingSettings(), voice_blend: state.voiceBlend, workers: Number($('worker-count').value), character_voices: {...state.assignments}, demo: state.demo, studio_context: window.agvModels?.snapshot() || {}};
 }
 function updateControls() {
   const occupied = state.busy || state.setupBusy || state.loading || running();
@@ -84,6 +84,10 @@ function updateControls() {
   $('generate-button-text').textContent = $('auto-mode')?.checked ? 'Создать автоматически' : 'Создать озвучку';
   $('generate-button').disabled = occupied || !state.lines.length || !state.engines[engine] || (needsVoice && !hasVoice) || !$('output-path').value.trim();
   $('auto-selected').hidden = $('auto-mode').checked || !['renpy', 'source_lostcoast'].includes(state.engine);
+  if ($('auto-mode').checked && state.lines.length && !occupied) $('generate-button').disabled = false;
+  $('dub-trial').disabled = $('generate-button').disabled;
+  for (const field of ['dub-direction','dub-provider','dub-model','dub-endpoint','dub-key']) $(field).disabled = occupied;
+  syncDubbing();
   $('auto-selected').disabled = $('generate-button').disabled;
   $('preview-button').disabled = occupied || !state.engines[engine] || (needsVoice && !selectedVoice());
   for (const id of ['extract-button', 'browse-game', 'demo-button', 'demo-empty', 'demo-side', 'new-project', 'import-project']) $(id).disabled = occupied;
@@ -196,9 +200,15 @@ async function loadGame(demo = false, restored = null) {
 
     if (data.ready === false) { window.agvAuto?.issue(data); return; }
     $('game-path').value = data.path;
-    if (data.language && !restored) $('voice-language').value = data.language;
+    if (data.language && !restored) {
+      $('dub-direction').value = data.language === 'en' ? 'ru' : '';
+      $('voice-language').value = $('dub-direction').value || data.language;
+    }
     state.lines = data.lines; state.characters = data.characters; state.engine = data.engine; state.game = data.path;
-    if (restored?.schema) state.voiceBlend = restored.voice_blend || defaultVoiceBlend();
+    if (restored?.schema) {
+      state.voiceBlend = restored.voice_blend || defaultVoiceBlend();
+      setDubbing(restored);
+    }
     state.assignments = Object.assign(Object.create(null), restored?.character_voices || {}); state.demo = demo; state.page = 0; state.job = null; state.resultIndex.clear();
     clearTimeout(pollTimer); $('job-indicator').hidden = true; $('mini-progress').hidden = true;
     const name = demo ? 'Ночной сигнал' : data.engine === 'source_lostcoast' ? 'Half-Life 2: Lost Coast' : data.path.split(/[\\/]/).filter(Boolean).at(-1);
@@ -271,6 +281,18 @@ function renderJob() {
   }
   if (job.error) box.append(el('div', 'notice error', friendlyError(new Error(job.error))));
   if (job.result) {
+    if (job.result.trial) {
+      box.append(el('h3', '', 'Пробный дубляж'), el('p', 'field-hint', 'Сравните перевод с оригиналом и послушайте запись. Для нового варианта выберите другую модель перевода или другой голос.'));
+      for (const row of job.result.lines) {
+        box.append(el('p', '', row.metadata?.original_text || row.text));
+        if (row.metadata?.original_text) box.append(el('p', '', row.text));
+        if (row.status === 'done') {
+          const player = el('audio'); player.controls = true; player.preload = 'none';
+          player.setAttribute('aria-label', 'Запись: ' + row.text);
+          player.src = `/api/studio/mod/${job.id}/audio/${row.id}`; box.append(player);
+        }
+      }
+    }
     const location = el('details', 'job-location');
     location.append(el('summary', '', 'Где сохранены файлы'), el('p', 'job-path', job.result.out));
     if (job.result.installation?.path) location.append(el('p', 'job-path', job.result.installation.path));
@@ -281,7 +303,7 @@ function renderJob() {
     }
     const installation = job.result.installation;
     const installedName = installation?.engine === 'renpy' ? 'Ren’Py' : 'Lost Coast';
-    box.append(el('p', 'job-help', installation?.status === 'installed' ? installation.verification?.status === 'ok' ? `Озвучка ${installedName} установлена и проверена. Перезапустите игру. Исходные файлы сохранены.` : 'Мод установлен, но проверка не подтверждена. Нажмите «Проверить озвучку».' : installation?.status === 'disabled' ? installation.note : 'WAV-файлы и отчёт сохранены. Для этой игры подключение аудио выполняется отдельно.'));
+    if (!job.result.trial) box.append(el('p', 'job-help', installation?.status === 'installed' ? installation.verification?.status === 'ok' ? `Озвучка ${installedName} установлена и проверена. Перезапустите игру. Исходные файлы сохранены.` : 'Мод установлен, но проверка не подтверждена. Нажмите «Проверить озвучку».' : installation?.status === 'disabled' ? installation.note : 'WAV-файлы и отчёт сохранены. Для этой игры подключение аудио выполняется отдельно.'));
     if (installation?.error) box.append(el('p', 'notice error', friendlyError(new Error(installation.error))));
     if (installation?.status === 'installed') {
       const playGame = el('button', 'button primary', `Запустить ${installedName}`);
@@ -338,7 +360,7 @@ async function pollJob(id) {
   try {
     const job = await api(`/api/studio/mod/${id}`);
     if (state.job?.id !== id) return;
-    state.job = job; state.resultIndex = new Map((job.result?.lines || []).map(item => [JSON.stringify([item.source_file, item.line_no, item.speaker, item.text]), item])); renderJob(); renderLines();
+    state.job = job; state.resultIndex = new Map((job.result?.lines || []).map(item => [JSON.stringify([item.source_file, item.line_no, item.speaker, item.metadata?.original_text ?? item.text]), item])); renderJob(); renderLines();
     if (activeStatuses.has(job.status)) pollTimer = setTimeout(() => pollJob(id), 1000);
     else notice(job.status === 'done' ? job.result?.installation?.verification?.status === 'ok' ? 'Озвучка установлена и проверена. Можно запускать игру.' : 'Аудиофайлы созданы. Готовые реплики можно прослушать в таблице.' : job.error ? friendlyError(new Error(job.error)) : statusNames[job.status], job.status === 'done' ? 'success' : job.status === 'failed' || job.status === 'partial' ? 'error' : '');
   } catch (error) {
@@ -346,11 +368,11 @@ async function pollJob(id) {
     notice(`${friendlyError(error)} Повторим проверку статуса через несколько секунд.`, 'error'); pollTimer = setTimeout(() => pollJob(id), 4000);
   }
 }
-async function generate() {
+async function generate(trial = false) {
   if ($('generate-button').disabled) return;
   state.busy = true; updateControls(); notice('Подготавливаем генерацию…');
   try {
-    const data = await api('/api/studio/mod', settings());
+    const data = await api('/api/studio/mod', {...settings(), ...dubbingRequest(trial)});
     state.job = {id: data.job_id, status: 'running', total: 0, succeeded: 0, failed: 0};
     window.agvAuto?.remember(data.job_id);
     setTab('jobs'); renderJob(); await pollJob(data.job_id);
@@ -365,6 +387,7 @@ function resetProject() {
   if (running() || state.busy || state.setupBusy || state.loading) return;
   window.agvModels?.reset(); window.agvAuto?.reset();
   state.voiceBlend = defaultVoiceBlend();
+  setDubbing({translate_to:'ru', ...window.agvModels?.translationDefaults()});
   projectVersion++; clearTimeout(pollTimer); state.lines = []; state.characters = []; state.assignments = Object.create(null); state.game = ''; state.engine = ''; state.demo = false; state.job = null; state.resultIndex.clear();
   $('project-title').textContent = 'Начните новую историю.'; $('heading-kicker').textContent = 'ВАША ИГРА. ВАШИ ГОЛОСА.';
   $('project-description').textContent = 'Превратите игровые диалоги в озвучку — на своём компьютере.'; $('crumb').textContent = 'Новый проект';
@@ -480,6 +503,8 @@ async function validateProjectJson(raw) {
   if (data?.schema !== 'anygamevoice-project' || data.version !== 1 || typeof data.path !== 'string' || !['piper', 'xtts', 'silero', 'bark'].includes(data.engine)) throw new Error('Выберите JSON-файл настроек, сохранённый AnyGameVoice.');
   for (const key of ['out', 'voice', 'emotion', 'language']) if (typeof data[key] !== 'string') throw new Error('В файле проекта отсутствуют обязательные настройки.');
   if (!data.character_voices || typeof data.character_voices !== 'object' || Array.isArray(data.character_voices) || Object.values(data.character_voices).some(v => typeof v !== 'string')) throw new Error('Некорректные назначения голосов.');
+  delete data.api_key;
+  if (data.base_url && !safeDubbingEndpoint(data.base_url)) throw new Error('Укажите HTTP(S)-адрес API без ключей и параметров.');
   data.voice_blend = await api('/api/studio/project/voice-blend', data.voice_blend ?? defaultVoiceBlend());
   return data;
 }
@@ -487,6 +512,7 @@ async function validateProjectJson(raw) {
 async function applyProjectJson(data) {
   if (typeof data.renpy_sdk === 'string') $('renpy-sdk').value = data.renpy_sdk;
   $('auto-mode').checked = data.automatic === true; $('manual-settings').open = !$('auto-mode').checked;
+  setDubbing(data);
   $('game-path').value = data.path; $('tts-engine').value = data.engine; $('voice-path').value = data.voice; $('voice-select').value = '';
   $('voice-emotion').value = data.emotion; $('voice-language').value = data.language;
   $('worker-count').value = [1, 2, 4].includes(data.workers) ? data.workers : 2;

@@ -65,7 +65,8 @@ def cmd_config(action: str):
 
 
 def cmd_mod(folder: str, out: str, voice: str = "", engine: str = "piper", workers: int = 2, emotion: str = "neutral",
-            translate_to: str = "", provider: str = "ollama") -> dict:
+            translate_to: str = "", provider: str = "ollama", *, source_lang: str = "auto",
+            translation_model: str = "", api_key: str = "", base_url: str = "") -> dict:
     """Generate audio and return the same per-line report exposed by the UI."""
     from app.core.extractor.dialogue_extractor import extract_dialogue
     from app.core.queue.task_queue import TaskQueue, TaskStatus
@@ -100,9 +101,9 @@ def cmd_mod(folder: str, out: str, voice: str = "", engine: str = "piper", worke
                 results.append(result)
                 if translate_to:
                     try:
-                        line = translate_line(line, translate_to, provider=provider)
-                    except Exception as exc:
-                        result["skipped_reason"] = f"Translation failed: {str(exc) or type(exc).__name__}"
+                        line = translate_line(line, translate_to, source_lang, provider, api_key, translation_model, base_url)
+                    except Exception:
+                        result["skipped_reason"] = "Translation failed. Check the selected model and provider access."
                         continue
                 line.voice_id = line.voice_id or voice
                 if line.emotion == "neutral":

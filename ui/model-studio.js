@@ -812,6 +812,7 @@
     if (welcomePreferences?.cloudProvider !== welcomeDraft.cloudProvider ||
       welcomePreferences?.custom?.baseUrl !== welcomeDraft.custom?.baseUrl) $('research-key').value = '';
     welcomePreferences = {...welcomeDraft};
+    setDubbing({translate_to:$('dub-direction').value, ...translationDefaults()});
     try { localStorage.setItem('agv-start-models-v1', JSON.stringify(welcomePreferences)); } catch {}
     chooseWelcomeVoice(welcomePreferences.voice);
     renderResearchOptions(true);
@@ -894,6 +895,9 @@
     researchDescription();
   }
   function renderResearchOptions(usePreferences = false) {
+    $('dub-model-list').replaceChildren(...(plan?.research || [])
+      .filter(item => item.installed && !item.manual_only)
+      .map(item => new Option(item.name, item.id)));
     const oldResearch = usePreferences ? '' : $('research-model').value;
     const configured = savedCloudResearch();
     $('research-model').replaceChildren(new Option('Выберите модель исследования', ''));
@@ -1046,7 +1050,17 @@
   });
   $('voice-language').addEventListener('change', () => { if (state.game) refresh(false); });
   document.addEventListener('agv:controls', syncControls);
+  function translationDefaults() {
+    if (welcomePreferences?.mode !== 'cloud') return {provider:'ollama', translation_model:welcomePreferences?.research || ''};
+    return {provider:welcomePreferences.cloudProvider, translation_model:welcomePreferences.cloudResearch || '',
+      base_url:welcomePreferences.cloudProvider === 'custom' ? welcomePreferences.custom?.baseUrl || '' : ''};
+  }
   window.agvModels = {
+    translationDefaults,
+    translationToken(provider, endpoint) {
+      if (provider === 'openrouter') return routerSessionKey;
+      return provider === 'custom' && endpoint === customSessionKey?.baseUrl ? customSessionKey.token : '';
+    },
     welcomeOnStartup() {
       const preview = new URLSearchParams(location.search).get('welcome') === '1';
       if (preview || (!welcomeSeen && !state.game)) openWelcome();
@@ -1081,6 +1095,7 @@
     snapshot: () => ({title:$('research-title-input').value,model:$('research-model').value,references:{...references}}),
     reset() { epoch++; pending=false; report=null; references=Object.create(null); renderReport(); for(const id of ['research-title-input','research-source-url','research-source-text','reference-actor','reference-path']) $(id).value=''; $('reference-character').replaceChildren(new Option('Нужны извлечённые персонажи','')); $('research-model').replaceChildren(new Option('Сначала откройте игру','')); $('reference-state').textContent=''; $('research-state').textContent='Откройте игру, чтобы подобрать модель.'; $('empty-state').querySelector('h3').textContent='У каждой истории есть голос'; $('empty-state').querySelector('p').textContent='Откройте папку игры. Мы найдём диалоги и соберём персонажей в одном месте.'; $('demo-empty').hidden=false; }
   };
+  setDubbing({translate_to:$('dub-direction').value, ...translationDefaults()});
   syncControls();
   refresh(false);
 })();

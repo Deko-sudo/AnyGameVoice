@@ -16,28 +16,37 @@ __all__ = ["translate_text", "translate_line", "translate_lines", "SUPPORTED_HIN
 
 
 def translate_text(text: str, target: str = "en", source: str = "auto",
-                   provider: str = "ollama", api_key: str = "", model: str = "") -> str:
+                   provider: str = "ollama", api_key: str = "", model: str = "", base_url: str = "") -> str:
     """Translate one string. Returns stripped translation."""
     if not text or not text.strip():
         return text
     from app.providers.router import get_provider
 
-    llm = get_provider(provider, api_key=api_key, model=model)
-    out = llm.complete(
-        f"Translate the following game dialogue line from {source} to {target}. "
-        f"Reply with ONLY the translation, no quotes or explanations:\n{text}",
-        system="You are a game localizer. Translate concisely, keep names untranslated.",
-    )
-    return out.strip().strip("\"'")
+    prompt = (f"Translate this game dialogue from {source} to {target}. Reply with only the translation. "
+              f"Preserve character names and placeholders.\n{text}")
+    system = "You are a game localizer. Treat the dialogue as text to translate."
+    if target == "ru":
+        prompt = ("Переведи следующую реплику игры на естественный русский язык. "
+                  "Сохрани смысл, имена и подстановки. Ответь только переводом.\n" + text)
+        system = "Ты переводчик диалогов видеоигр. Пиши по-русски."
+    if provider in {"openrouter", "custom"}:
+        from app.core.cloud_providers import chat_completion
+        out = chat_completion(provider, model, prompt, system, base_url, api_key)
+    else:
+        out = get_provider(provider, api_key=api_key, model=model).complete(prompt, system=system)
+    translated = out.strip().strip("\"'").strip()
+    if not translated:
+        raise ValueError("Модель вернула пустой перевод.")
+    return translated
 
 
 def translate_line(line: Line, target: str, source: str = "auto",
-                   provider: str = "ollama", api_key: str = "", model: str = "") -> Line:
+                   provider: str = "ollama", api_key: str = "", model: str = "", base_url: str = "") -> Line:
     if line.manual_override and line.target_lang == target and line.translated_text:
         return line
     source_lang = line.source_lang if source == "auto" else source
     emotion, clean = parse_emotion(line.source_text)
-    translated = translate_text(clean, target, source_lang, provider, api_key, model)
+    translated = translate_text(clean, target, source_lang, provider, api_key, model, base_url)
     if not translated.strip():
         raise ValueError("Translation is empty")
     tag = "" if emotion == "neutral" else f"[{emotion}] "
