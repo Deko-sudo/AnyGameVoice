@@ -24,3 +24,19 @@ def test_app_routes():
     assert "/api/scan" in paths
     assert "/api/extract" in paths
     assert "/api/voices" in paths
+
+
+def test_rust_controls_are_served_with_wasm_policy():
+    pytest.importorskip("httpx")
+    from fastapi.testclient import TestClient
+    from app.ui_server import create_app
+
+    with TestClient(create_app()) as client:
+        index = client.get("/")
+        assert index.status_code == 200
+        assert "/assets/rust-ui-loader.js" in index.text
+        assert "'wasm-unsafe-eval'" in index.headers["content-security-policy"]
+        wasm = client.get("/assets/rust-ui/anygamevoice_ui_bg.wasm")
+        assert wasm.status_code == 200
+        assert wasm.content.startswith(b"\x00asm")
+        assert wasm.headers["content-type"].startswith("application/wasm")

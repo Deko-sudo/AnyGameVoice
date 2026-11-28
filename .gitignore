@@ -62,6 +62,7 @@ settings.json
 
 # Rust / Tauri
 src-tauri/target/
+ui-rust/target/
 src-tauri/WixTools/
 src-tauri/binaries/
 node_modules/

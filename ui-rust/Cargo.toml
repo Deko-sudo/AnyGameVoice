@@ -1,0 +1,17 @@
+[package]
+name = "anygamevoice-ui"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+js-sys = "=0.3.102"
+wasm-bindgen = "=0.2.125"
+web-sys = { version = "=0.3.102", features = [
+    "Window", "Document", "Element", "Node", "Event", "EventInit", "EventTarget",
+    "HtmlElement", "HtmlButtonElement", "HtmlSelectElement", "HtmlOptionElement",
+    "HtmlOptionsCollection", "NodeList", "ScrollIntoViewOptions", "ScrollLogicalPosition", "KeyboardEvent", "MouseEvent", "DomRect", "CssStyleDeclaration",
+    "MutationObserver", "MutationObserverInit",
+] }

@@ -1,4 +1,4 @@
-recursive-include ui *.html *.css *.js *.svg *.ttf *.txt *.md
+recursive-include ui *.html *.css *.js *.svg *.ttf *.txt *.md *.wasm
 recursive-include examples *.rpy
 include voices/presets/.gitkeep
 
@@ -6,3 +6,7 @@ include LICENSE NOTICE THIRD_PARTY_NOTICES.md
 include scripts/generate-themes.mjs
 include scripts/theme-tools/package.json scripts/theme-tools/package-lock.json
 include scripts/theme-tools/schemes.mjs
+
+include ui-rust/Cargo.toml ui-rust/Cargo.lock
+recursive-include ui-rust/src *.rs
+include scripts/build-rust-ui.sh

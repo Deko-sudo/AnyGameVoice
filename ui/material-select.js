@@ -138,11 +138,14 @@
   }
 
   window.syncMaterialSelects = () => controls.forEach(sync);
-  document.addEventListener('DOMContentLoaded', () => {
+  function init() {
     for (const id of ['dub-direction', 'dub-provider', 'dub-format']) {
-      enhance(document.getElementById(id));
+      const select = document.getElementById(id);
+      if (!select.hidden) enhance(select);
     }
-  });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
   window.addEventListener('resize', () => { if (openControl) position(openControl); });
   document.addEventListener('scroll', event => {
     if (openControl && !openControl.menu.contains(event.target)) position(openControl);
