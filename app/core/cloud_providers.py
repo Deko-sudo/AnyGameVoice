@@ -173,7 +173,8 @@ def opencode_catalog():
                             if isinstance(method, dict) and method.get('type') in {'key', 'oauth', 'env', 'command', 'external'}}),
          'free_options': ident == 'opencode'}
         for row in rows
-        if _cloud_integration(ident := row.get('id')) and isinstance(row.get('name'), str)
+        if _cloud_integration(ident := row.get('id')) and not ident.startswith('mcp_')
+        and isinstance(row.get('name'), str)
     ]
 
 

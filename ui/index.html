@@ -13,9 +13,9 @@
   <script src="/assets/appearance.js?v=0.1.1-12"></script>
   <link rel="stylesheet" href="/assets/themes.css?v=0.1.1-11">
   <link rel="stylesheet" href="/assets/studio.css?v=0.1.1-26">
-  <script defer src="/assets/dubbing.js?v=0.1.1-2"></script>
-  <script defer src="/assets/studio.js?v=0.1.1-17"></script>
-  <script defer src="/assets/model-studio.js?v=0.1.1-31"></script>
+  <script defer src="/assets/dubbing.js?v=0.1.1-3"></script>
+  <script defer src="/assets/studio.js?v=0.1.1-18"></script>
+  <script defer src="/assets/model-studio.js?v=0.1.1-32"></script>
   <script defer src="/assets/automatic.js?v=0.1.1-15"></script>
   <script defer src="/assets/setup-components.js?v=0.1.1-13"></script>
 </head>
@@ -120,7 +120,7 @@
           </details>
           <fieldset class="dubbing-settings"><legend>Дубляж сцены</legend>
             <label for="dub-direction">Язык перевода</label><select id="dub-direction"><option value="">Озвучить исходный текст</option><option value="ru" selected>Русский</option></select>
-            <div id="dub-options"><label for="dub-provider">Переводчик</label><select id="dub-provider"><option value="" disabled>Выберите переводчик</option><option value="ollama" selected>Ollama · на устройстве</option><option value="opencode">OpenCode</option><option value="openrouter">OpenRouter</option><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="groq">Groq</option><option value="mistral">Mistral AI</option><option value="deepseek">DeepSeek</option><option value="custom">Свой совместимый API</option></select>
+            <div id="dub-options"><button id="dub-connect" class="button secondary" type="button">Подключить модель или подписку</button><label for="dub-provider">Переводчик</label><select id="dub-provider"><option value="" disabled>Выберите переводчик</option><option value="ollama" selected>Ollama · на устройстве</option><option value="opencode">OpenCode</option><option value="openrouter">OpenRouter</option><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="groq">Groq</option><option value="mistral">Mistral AI</option><option value="deepseek">DeepSeek</option><option value="custom">Свой совместимый API</option></select>
             <label for="dub-model">Модель перевода</label><input id="dub-model" placeholder="ID модели у провайдера" maxlength="200" list="dub-model-list"><datalist id="dub-model-list"></datalist><p class="field-hint">Выберите найденную модель или введите её ID. Облачные провайдеры используют API-ключ.</p>
             <div id="dub-custom" hidden><label for="dub-format">Формат API</label><select id="dub-format"><option value="openai_chat">OpenAI · Chat Completions</option><option value="openai_responses">OpenAI · Responses</option><option value="anthropic">Anthropic · Messages</option><option value="gemini">Gemini · generateContent</option><option value="ollama">Ollama · Chat</option></select><label for="dub-endpoint">Базовый адрес API</label><input id="dub-endpoint" type="url" placeholder="https://…/v1"></div><p class="field-hint" id="dub-opencode" hidden>Модель в формате провайдер/модель. Вход выполняется через OpenCode.</p>
             <label id="dub-auth" hidden>Ключ API<input id="dub-key" type="password" autocomplete="off" placeholder="Только для текущего сеанса"></label></div>
@@ -217,11 +217,13 @@
       <div id="welcome-custom-fields" class="welcome-custom-fields" hidden>
         <label for="welcome-custom-name">Название</label>
         <input id="welcome-custom-name" maxlength="80" placeholder="Свой провайдер">
-        <label for="welcome-custom-url">Базовый URL OpenAI-совместимого API</label>
+        <label for="welcome-custom-format">Формат API</label>
+        <select id="welcome-custom-format"><option value="openai_chat">OpenAI · Chat Completions</option><option value="openai_responses">OpenAI · Responses</option><option value="anthropic">Anthropic · Messages</option><option value="gemini">Gemini · generateContent</option><option value="ollama">Ollama · Chat</option></select>
+        <label for="welcome-custom-url">Базовый URL API</label>
         <input id="welcome-custom-url" type="url" maxlength="2048" placeholder="https://example.com/v1" autocomplete="off">
         <label for="welcome-custom-key">API-ключ (если нужен)</label>
         <input id="welcome-custom-key" type="password" maxlength="4096" autocomplete="off" spellcheck="false">
-        <p class="field-hint">«Далее» загрузит каталог моделей. Ключ будет доступен в этой вкладке для запросов к провайдеру.</p>
+        <p class="field-hint">Для OpenAI Chat можно загрузить каталог. Для других форматов укажите ID модели вручную. Ключ хранится только в этой вкладке.</p>
         <button id="welcome-custom-manual" class="text-link" type="button">Ввести ID модели вручную</button>
       </div>
     </div>

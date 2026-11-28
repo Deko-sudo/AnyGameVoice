@@ -100,6 +100,7 @@ document.addEventListener('DOMContentLoaded', () => {
       updateControls();
     });
   }
+  $('dub-connect').addEventListener('click', () => window.agvModels?.openConnectionPicker());
   $('dub-text').addEventListener('click', () => generate(false, true));
   $('dub-trial').addEventListener('click', () => {
     if ($('auto-mode').checked) window.agvAuto.start(false, true);

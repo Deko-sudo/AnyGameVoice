@@ -41,7 +41,9 @@
   const occupied = () => state.busy || state.setupBusy || state.loading || running();
   const selectedResearch = () => plan?.research.find(item => item.id === $('research-model').value);
   const savedCloudResearch = () => welcomePreferences?.mode === 'cloud' && welcomePreferences.cloudResearch &&
-    ['openrouter', 'custom'].includes(welcomePreferences.cloudProvider) ? welcomePreferences : null;
+    (welcomePreferences.cloudProvider === 'openrouter' ||
+      (welcomePreferences.cloudProvider === 'custom' && (!welcomePreferences.custom?.apiFormat || welcomePreferences.custom.apiFormat === 'openai_chat')))
+      ? welcomePreferences : null;
   const activeCloudResearch = () => $('research-model').value === 'agv:cloud' ? savedCloudResearch() : null;
   const cloudResearchName = config => config.cloudProvider === 'openrouter' ? 'OpenRouter' : config.custom?.name || 'Свой провайдер';
   const readiness = item => item.launch_verified ? 'Пробная запись выполнена' : item.installed && item.engine==='xtts' ? 'Движок установлен · веса требуют проверки' : item.installed ? 'Установлена · запуск не проверен' : 'Нужно установить';
@@ -280,7 +282,7 @@
     const content = el('span');
     content.append(el('strong', '', provider.name));
     const hints = [];
-    if (provider.id === 'custom') hints.push('OpenAI-совместимый API · укажите адрес');
+    if (provider.id === 'custom') hints.push('Свой API · адрес, формат и модель');
     if (provider.source === 'opencode') {
       if (provider.status === 'connected') hints.push('Подключён в OpenCode');
       else if (provider.methods.includes('oauth')) hints.push('Вход через аккаунт в OpenCode');
@@ -472,16 +474,17 @@
     try {
       const baseUrl = localCustomURL($('welcome-custom-url').value.trim());
       const name = $('welcome-custom-name').value.trim() || 'Свой провайдер';
+      const apiFormat = $('welcome-custom-format').value;
       customProbe = true;
       $('welcome-continue').disabled = true;
       $('welcome-custom-manual').disabled = true;
-      if (!manual) note.textContent = 'Проверяем каталог моделей…';
-      const result = manual
+      if (!manual && apiFormat === 'openai_chat') note.textContent = 'Проверяем каталог моделей…';
+      const result = manual || apiFormat !== 'openai_chat'
         ? {status: 'unknown', models: [], catalog: 'manual'}
         : await api('/api/studio/cloud/custom/models', {base_url: baseUrl, api_key: token});
       if (draft !== welcomeDraft || !$('welcome-dialog').open || welcomeStep !== 'provider' || draft.cloudProvider !== 'custom') return;
-      if (welcomeDraft.custom?.baseUrl !== baseUrl) welcomeDraft.cloudResearch = '';
-      welcomeDraft.custom = {name, baseUrl};
+      if (welcomeDraft.custom?.baseUrl !== baseUrl || (welcomeDraft.custom?.apiFormat || 'openai_chat') !== apiFormat) welcomeDraft.cloudResearch = '';
+      welcomeDraft.custom = {name, baseUrl, apiFormat};
       if (token || customSessionKey?.baseUrl !== baseUrl) customSessionKey = {baseUrl, token};
       providerResults.set('custom', result);
       note.textContent = '';
@@ -561,9 +564,13 @@
             ? 'Каталог не ответил. Показаны варианты OpenRouter для справки.'
             : !result?.models?.length && id !== 'custom'
               ? 'Модели не получены. Можно вернуться к выбору провайдера.'
-              : ['openrouter', 'custom'].includes(id)
-                ? 'Эту модель можно использовать в разделе «Исследование игры».'
-                : 'Модель сохранится в настройках. Исследование через этот клиент ещё не подключено.';
+              : id === 'custom' && welcomeDraft.custom?.apiFormat !== 'openai_chat'
+                ? 'Эта модель будет использоваться для перевода реплик.'
+                : ['openrouter', 'custom'].includes(id)
+                  ? 'Эту модель можно использовать для перевода и исследования игры.'
+                  : fromOpenCode(id)
+                    ? 'Эта модель будет использоваться для перевода через OpenCode.'
+                    : 'Модель сохранится в настройках. Исследование через этот клиент ещё не подключено.';
       return;
     }
     link.hidden = true;
@@ -736,6 +743,7 @@
     };
     $('welcome-custom-name').value = welcomeDraft.custom?.name || '';
     $('welcome-custom-url').value = welcomeDraft.custom?.baseUrl || '';
+    $('welcome-custom-format').value = welcomeDraft.custom?.apiFormat || 'openai_chat';
     $('welcome-custom-key').value = '';
     $('welcome-provider-search').value = '';
     $('welcome-providers-connected').checked = false;
@@ -1059,12 +1067,14 @@
     if (fromOpenCode(welcomePreferences.cloudProvider)) {
       return {provider:'opencode', translation_model:welcomePreferences.cloudResearch || ''};
     }
-    if (!savedCloudResearch()) return {provider:'', translation_model:''};
+    if (!['openrouter', 'custom'].includes(welcomePreferences.cloudProvider)) return {provider:'', translation_model:''};
     return {provider:welcomePreferences.cloudProvider, translation_model:welcomePreferences.cloudResearch || '',
-      base_url:welcomePreferences.cloudProvider === 'custom' ? welcomePreferences.custom?.baseUrl || '' : ''};
+      base_url:welcomePreferences.cloudProvider === 'custom' ? welcomePreferences.custom?.baseUrl || '' : '',
+      api_format:welcomePreferences.cloudProvider === 'custom' ? welcomePreferences.custom?.apiFormat || 'openai_chat' : 'openai_chat'};
   }
   window.agvModels = {
     translationDefaults,
+    openConnectionPicker: openWelcome,
     updateDubbingModels,
     async loadDubbingOpenCode() {
       try {

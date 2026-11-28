@@ -85,6 +85,7 @@ function updateControls() {
   $('generate-button').disabled = occupied || !state.lines.length || !state.engines[engine] || (needsVoice && !hasVoice) || !$('output-path').value.trim();
   $('auto-selected').hidden = $('auto-mode').checked || !['renpy', 'source_lostcoast'].includes(state.engine);
   if ($('auto-mode').checked && state.lines.length && !occupied) $('generate-button').disabled = false;
+  $('dub-connect').disabled = occupied;
   $('dub-text').disabled = occupied || !state.lines.length || !$('dub-direction').value || !$('output-path').value.trim();
   $('dub-trial').disabled = $('generate-button').disabled;
   for (const field of ['dub-direction','dub-provider','dub-model','dub-endpoint','dub-format','dub-key']) $(field).disabled = occupied;
