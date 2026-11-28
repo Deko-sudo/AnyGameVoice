@@ -87,7 +87,7 @@ function updateControls() {
   if ($('auto-mode').checked && state.lines.length && !occupied) $('generate-button').disabled = false;
   $('dub-text').disabled = occupied || !state.lines.length || !$('dub-direction').value || !$('output-path').value.trim();
   $('dub-trial').disabled = $('generate-button').disabled;
-  for (const field of ['dub-direction','dub-provider','dub-model','dub-endpoint','dub-key']) $(field).disabled = occupied;
+  for (const field of ['dub-direction','dub-provider','dub-model','dub-endpoint','dub-format','dub-key']) $(field).disabled = occupied;
   syncDubbing();
   $('auto-selected').disabled = $('generate-button').disabled;
   $('preview-button').disabled = occupied || !state.engines[engine] || (needsVoice && !selectedVoice());

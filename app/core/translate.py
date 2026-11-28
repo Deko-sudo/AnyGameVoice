@@ -17,7 +17,7 @@ __all__ = ["translate_text", "translate_line", "translate_lines", "SUPPORTED_HIN
 
 
 def translate_text(text: str, target: str = "en", source: str = "auto",
-                   provider: str = "ollama", api_key: str = "", model: str = "", base_url: str = "") -> str:
+                   provider: str = "ollama", api_key: str = "", model: str = "", base_url: str = "", api_format: str = "openai_chat") -> str:
     """Translate one string. Returns stripped translation."""
     if not text or not text.strip():
         return text
@@ -33,7 +33,13 @@ def translate_text(text: str, target: str = "en", source: str = "auto",
         prompt = ("Переведи следующую реплику игры на естественный русский язык. "
                   "Сохрани смысл, имена и подстановки. Ответь только переводом.\n" + text)
         system = "Ты переводчик диалогов видеоигр. Пиши по-русски."
-    if provider in {"openrouter", "custom"}:
+    if provider == "opencode":
+        from app.core.translation_connections import opencode_translation
+        out = opencode_translation(model, prompt, system)
+    elif provider == "custom" and api_format != "openai_chat":
+        from app.core.translation_connections import custom_translation
+        out = custom_translation(model, prompt, system, base_url, api_key, api_format)
+    elif provider in {"openrouter", "custom"}:
         from app.core.cloud_providers import chat_completion
         out = chat_completion(provider, model, prompt, system, base_url, api_key)
     else:

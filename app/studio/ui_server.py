@@ -81,6 +81,7 @@ def start_mod_job(params: dict) -> int:
                              on_progress=progress, cancel_event=_CANCEL[job_id],
                              voice_blend=params.get('voice_blend'), trial=params.get('trial', False),
                              text_only=params.get('text_only', False), language_subdir=params.get('language_subdir', False),
+                             api_format=params.get('api_format', 'openai_chat'),
                              source_lang=params.get('source_lang', 'auto'), translation_model=params.get('translation_model', ''),
                              base_url=params.get('base_url', ''), api_key=params.get('api_key', ''))
             if not isinstance(result, dict) or result.get('status') not in {'done', 'partial', 'failed', 'cancelled'}:
@@ -142,10 +143,11 @@ def create_app():
     class TranslationSettings(BaseModel):
         source_lang: str = Field(default='auto', max_length=12)
         translate_to: str = Field(default='', max_length=12)
-        provider: Literal['ollama', 'openai', 'anthropic', 'groq', 'mistral', 'deepseek', 'openrouter', 'custom'] = 'ollama'
+        provider: Literal['ollama', 'openai', 'anthropic', 'groq', 'mistral', 'deepseek', 'openrouter', 'custom', 'opencode'] = 'ollama'
         translation_model: str = Field(default='', max_length=200)
         base_url: str = Field(default='', max_length=2048)
         api_key: str = Field(default='', max_length=4096, repr=False)
+        api_format: Literal['openai_chat', 'openai_responses', 'anthropic', 'gemini', 'ollama'] = 'openai_chat'
         trial: bool = False
         language_subdir: bool = False
 

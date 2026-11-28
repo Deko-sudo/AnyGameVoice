@@ -18,6 +18,7 @@ function setDubbing(value = {}) {
   $('dub-provider').value = value.provider ?? 'ollama';
   $('dub-model').value = value.translation_model || '';
   $('dub-endpoint').value = value.base_url || '';
+  $('dub-format').value = value.api_format || 'openai_chat';
   $('dub-key').value = '';
   syncDubbing();
 }
@@ -33,14 +34,15 @@ function dubbingSettings() {
   const translate_to = $('dub-direction').value;
   if (!translate_to) return {};
   return {source_lang: dubbingSource, translate_to, provider: $('dub-provider').value,
-    translation_model: $('dub-model').value.trim(), base_url: $('dub-provider').value === 'custom' ? safeDubbingEndpoint($('dub-endpoint').value.trim()) : ''};
+    translation_model: $('dub-model').value.trim(), api_format: $('dub-provider').value === 'custom' ? $('dub-format').value : 'openai_chat', base_url: $('dub-provider').value === 'custom' ? safeDubbingEndpoint($('dub-endpoint').value.trim()) : ''};
 }
 function syncDubbing() {
   const options = dubbingSettings();
   $('dub-options').hidden = !options.translate_to;
   window.agvModels?.updateDubbingModels(options.provider);
   $('dub-custom').hidden = options.provider !== 'custom';
-  $('dub-auth').hidden = options.provider === 'ollama' || !options.provider;
+  $('dub-opencode').hidden = options.provider !== 'opencode';
+  $('dub-auth').hidden = ['ollama', 'opencode', ''].includes(options.provider);
   $('dub-text').hidden = !options.translate_to;
   const path = selectedVoice();
   const selected = state.voices.find(item => item.path === path);
@@ -70,15 +72,18 @@ function dubbingRequest(trial) {
       throw Error('Облачный перевод отменён.');
     }
   }
-  const api_key = config.provider === 'ollama' ? '' : $('dub-key').value.trim() ||
+  const api_key = ['ollama', 'opencode'].includes(config.provider) ? '' : $('dub-key').value.trim() ||
     window.agvModels?.translationToken(config.provider, config.base_url) || '';
   // Existing Russian projects reuse their original manifest and recordings.
   return {...config, trial, api_key, language_subdir: config.translate_to !== 'ru'};
 }
 document.addEventListener('DOMContentLoaded', () => {
-  for (const id of ['dub-direction','dub-provider','dub-model','dub-endpoint']) {
+  for (const id of ['dub-direction','dub-provider','dub-model','dub-endpoint','dub-format']) {
     $(id).addEventListener('input', () => {
-      if (id === 'dub-provider') $('dub-model').value = '';
+      if (id === 'dub-provider') {
+        $('dub-model').value = '';
+        if ($('dub-provider').value === 'opencode') window.agvModels?.loadDubbingOpenCode();
+      }
       if (id === 'dub-provider' || id === 'dub-endpoint') $('dub-key').value = '';
       if (id === 'dub-direction') {
         preferredDubbingTarget = $('dub-direction').value;

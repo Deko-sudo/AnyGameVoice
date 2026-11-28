@@ -180,3 +180,78 @@ def test_cloud_translation_providers_receive_model_and_key(client, project, monk
     assert result['lines'][0]['text'] == 'Перевод'
     assert len(calls) == 1 and calls[0][0] == PROVIDERS[provider].api_url
     assert 'temporary-key' not in (Path(result['out']) / 'anygamevoice.json').read_text()
+
+
+@pytest.mark.parametrize(('api_format', 'endpoint', 'response'), [
+    ('openai_responses', '/responses', {'output': [{'content': [{'type': 'output_text', 'text': 'Привет'}]}]}),
+    ('anthropic', '/messages', {'content': [{'type': 'text', 'text': 'Привет'}]}),
+    ('gemini', '/models/example:generateContent', {'candidates': [{'content': {'parts': [{'text': 'Привет'}]}}]}),
+    ('ollama', '/api/chat', {'message': {'content': 'Привет'}}),
+])
+def test_custom_protocols_end_to_end(client, project, monkeypatch, api_format, endpoint, response):
+    from app.core import translation_connections
+
+    game = Path(project['path']) / 'game' / 'script.rpy'
+    game.write_text('label start:\n    e "Hello."\n', encoding='utf-8')
+    calls = []
+
+    class Response:
+        status_code = 200
+        content = b'{}'
+
+        def json(self):
+            return response
+
+    class Session:
+        trust_env = True
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            pass
+
+        def post(self, url, **options):
+            calls.append((url, options))
+            return Response()
+
+    monkeypatch.setattr(translation_connections.requests, 'Session', Session)
+    settings = {**project, 'base_url': 'http://localhost/v1', 'translation_model': 'example',
+                'api_format': api_format, 'text_only': True}
+    job = finish_job(client, '/api/studio/mod', settings)
+    assert job['result']['lines'][0]['text'] == 'Привет'
+    assert calls[0][0] == 'http://localhost/v1' + endpoint
+    headers = calls[0][1]['headers']
+    if api_format == 'anthropic':
+        assert headers['x-api-key'] == 'temporary-key'
+    elif api_format == 'gemini':
+        assert headers['x-goog-api-key'] == 'temporary-key'
+    else:
+        assert headers['Authorization'] == 'Bearer temporary-key'
+    assert 'temporary-key' not in json.dumps(job)
+
+
+def test_opencode_translation_via_cli(client, project, monkeypatch):
+    from app.core import translation_connections
+    from types import SimpleNamespace
+
+    calls = []
+
+    def run(args, **options):
+        calls.append(args)
+        assert '--standalone' in args and '--archived' in args
+        assert args[args.index('--model') + 1] == 'opencode/example'
+        policy = json.loads((Path(options['cwd']) / 'opencode.json').read_text())
+        assert policy['permissions'][0]['effect'] == 'deny'
+        return SimpleNamespace(returncode=0, stdout=json.dumps(
+            {'type': 'text', 'part': {'text': 'Привет'}}))
+
+    monkeypatch.setattr(translation_connections, '_executable', lambda _: '/fake/opencode')
+    monkeypatch.setattr(translation_connections.subprocess, 'run', run)
+    game = Path(project['path']) / 'game' / 'script.rpy'
+    game.write_text('label start:\n    e "Hello."\n', encoding='utf-8')
+    job = finish_job(client, '/api/studio/mod', {**project, 'provider': 'opencode',
+                     'translation_model': 'opencode/example', 'base_url': '', 'text_only': True})
+    assert job['status'] == 'done'
+    assert job['result']['lines'][0]['text'] == 'Привет'
+    assert len(calls) == 1

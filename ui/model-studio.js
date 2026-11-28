@@ -1056,6 +1056,9 @@
   }
   function translationDefaults() {
     if (welcomePreferences?.mode !== 'cloud') return {provider:'ollama', translation_model:welcomePreferences?.research || ''};
+    if (fromOpenCode(welcomePreferences.cloudProvider)) {
+      return {provider:'opencode', translation_model:welcomePreferences.cloudResearch || ''};
+    }
     if (!savedCloudResearch()) return {provider:'', translation_model:''};
     return {provider:welcomePreferences.cloudProvider, translation_model:welcomePreferences.cloudResearch || '',
       base_url:welcomePreferences.cloudProvider === 'custom' ? welcomePreferences.custom?.baseUrl || '' : ''};
@@ -1063,6 +1066,13 @@
   window.agvModels = {
     translationDefaults,
     updateDubbingModels,
+    async loadDubbingOpenCode() {
+      try {
+        const result = await api('/api/studio/cloud/providers/opencode/inspect', {});
+        providerResults.set('opencode', result);
+        if ($('dub-provider').value === 'opencode') updateDubbingModels('opencode');
+      } catch { /* The model ID can still be entered manually. */ }
+    },
     refreshDubbingVoices() {
       if (state.game) refresh($('auto-mode').checked && $('tts-engine').value === 'piper' && !selectedVoice());
     },

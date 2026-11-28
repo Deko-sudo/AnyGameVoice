@@ -74,7 +74,7 @@ def run_batch(folder: str, out: str, voice: str = '', engine: str = 'piper', wor
               emotion: str = 'neutral', translate_to: str = '', provider: str = 'ollama',
               language: str = 'en', character_voices: dict | None = None,
               on_progress=None, cancel_event=None, voice_blend=None, source_lang='auto',
-              translation_model='', base_url='', api_key='', trial=False, text_only=False, language_subdir=False) -> dict:
+              translation_model='', base_url='', api_key='', trial=False, text_only=False, language_subdir=False, api_format="openai_chat") -> dict:
     """Export audio only. This does not install anything into a game."""
     game = Path(folder).expanduser().resolve()
     output = Path(out).expanduser().resolve()
@@ -124,6 +124,8 @@ def run_batch(folder: str, out: str, voice: str = '', engine: str = 'piper', wor
         blends[selected] = policy.for_voice(engine, selected)
     prompt_version = 1 if translate_to == 'ru' else 2
     translation = [prompt_version, source_lang, translate_to, provider, translation_model, base_url] if translate_to else None
+    if translation and provider == 'custom' and api_format != 'openai_chat':
+        translation.append(api_format)
     if translate_to:
         language = translate_to
     cancelled = cancel_event or threading.Event()
@@ -195,7 +197,7 @@ def run_batch(folder: str, out: str, voice: str = '', engine: str = 'piper', wor
                     from app.studio.core.translate import translate_lines
                     try:
                         line = translate_lines([line], translate_to, source_lang, provider, api_key,
-                                               translation_model, base_url)[0]
+                                               translation_model, base_url, api_format)[0]
                     except Exception:
                         if text_only and items:
                             atomic_json(manifest, _text_result(game, output, language, items, len(lines), 'failed'))
