@@ -1,6 +1,20 @@
-// Keep saved project choices separate from session-only provider credentials.
+let preferredDubbingTarget = null;
+let dubbingSource = 'auto';
+
+function loadDubbingLanguages(languages) {
+  for (const id of ['dub-direction', 'voice-language']) {
+    const select = $(id);
+    const saved = select.value;
+    const options = Object.entries(languages).map(([code, name]) => new Option(name, code));
+    if (id === 'dub-direction') options.unshift(new Option('Озвучить исходный текст', ''));
+    select.replaceChildren(...options);
+    select.value = saved;
+  }
+}
+
 function setDubbing(value = {}) {
-  $('dub-direction').value = value.translate_to === 'ru' ? 'ru' : '';
+  $('dub-direction').value = value.translate_to || '';
+  dubbingSource = value.source_lang || 'auto';
   $('dub-provider').value = value.provider ?? 'ollama';
   $('dub-model').value = value.translation_model || '';
   $('dub-endpoint').value = value.base_url || '';
@@ -18,7 +32,7 @@ function safeDubbingEndpoint(input) {
 function dubbingSettings() {
   const translate_to = $('dub-direction').value;
   if (!translate_to) return {};
-  return {source_lang: 'en', translate_to, provider: $('dub-provider').value,
+  return {source_lang: dubbingSource, translate_to, provider: $('dub-provider').value,
     translation_model: $('dub-model').value.trim(), base_url: $('dub-provider').value === 'custom' ? safeDubbingEndpoint($('dub-endpoint').value.trim()) : ''};
 }
 function syncDubbing() {
@@ -28,9 +42,19 @@ function syncDubbing() {
   else $('dub-model').removeAttribute('list');
   $('dub-custom').hidden = options.provider !== 'custom';
   $('dub-auth').hidden = !['custom','openrouter'].includes(options.provider);
-  const voice = selectedVoice().split(/[\\/]/).pop() || 'автоподбор';
-  $('dub-summary').textContent = options.translate_to
-    ? `English → Русский · ${options.provider || 'Выберите провайдера'} / ${options.translation_model || 'Выберите модель'} · Голос: ${voice}`
+  $('dub-text').hidden = !options.translate_to;
+  const path = selectedVoice();
+  const selected = state.voices.find(item => item.path === path);
+  const target = options.translate_to;
+  const label = $('dub-direction').selectedOptions[0]?.textContent;
+  let voice = path.split(/[\\/]/).pop() || 'автоподбор';
+  if (target && $('tts-engine').value === 'piper') {
+    const matches = item => item.engine === 'piper' && item.language?.split(/[-_]/)[0].toLowerCase() === target;
+    if (selected && !matches(selected)) voice += ' · выберите голос для этого языка';
+    else if (!path) voice = state.engines.piper && state.voices.some(matches) ? 'доступен для автоподбора' : 'нужен голос для дубляжа';
+  }
+  $('dub-summary').textContent = target
+    ? `Перевод: ${label} · ${options.provider || 'Выберите провайдера'} / ${options.translation_model || 'Выберите модель'} · Голос: ${voice}`
     : `Без перевода · Голос: ${voice}`;
 }
 function dubbingRequest(trial) {
@@ -49,17 +73,30 @@ function dubbingRequest(trial) {
   }
   const api_key = config.provider === 'ollama' ? '' : $('dub-key').value.trim() ||
     window.agvModels?.translationToken(config.provider, config.base_url) || '';
-  return {...config, trial, api_key};
+  // Existing Russian projects reuse their original manifest and recordings.
+  return {...config, trial, api_key, language_subdir: config.translate_to !== 'ru'};
 }
 document.addEventListener('DOMContentLoaded', () => {
   for (const id of ['dub-direction','dub-provider','dub-model','dub-endpoint']) {
     $(id).addEventListener('input', () => {
       if (id === 'dub-provider') $('dub-model').value = '';
       if (id === 'dub-provider' || id === 'dub-endpoint') $('dub-key').value = '';
-      if ($('dub-direction').value) $('voice-language').value = 'ru';
+      if (id === 'dub-direction') {
+        preferredDubbingTarget = $('dub-direction').value;
+        if (preferredDubbingTarget) {
+          $('voice-language').value = preferredDubbingTarget;
+          const voice = state.voices.find(item => item.path === selectedVoice());
+          if ($('auto-mode').checked && voice?.engine === 'piper' && voice.language?.split(/[-_]/)[0] !== preferredDubbingTarget) {
+            $('voice-path').value = ''; $('voice-select').value = '';
+            renderVoiceOptions();
+          }
+        }
+        window.agvModels?.refreshDubbingVoices();
+      }
       updateControls();
     });
   }
+  $('dub-text').addEventListener('click', () => generate(false, true));
   $('dub-trial').addEventListener('click', () => {
     if ($('auto-mode').checked) window.agvAuto.start(false, true);
     else generate(true);

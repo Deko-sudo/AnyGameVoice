@@ -85,6 +85,7 @@ function updateControls() {
   $('generate-button').disabled = occupied || !state.lines.length || !state.engines[engine] || (needsVoice && !hasVoice) || !$('output-path').value.trim();
   $('auto-selected').hidden = $('auto-mode').checked || !['renpy', 'source_lostcoast'].includes(state.engine);
   if ($('auto-mode').checked && state.lines.length && !occupied) $('generate-button').disabled = false;
+  $('dub-text').disabled = occupied || !state.lines.length || !$('dub-direction').value || !$('output-path').value.trim();
   $('dub-trial').disabled = $('generate-button').disabled;
   for (const field of ['dub-direction','dub-provider','dub-model','dub-endpoint','dub-key']) $(field).disabled = occupied;
   syncDubbing();
@@ -92,6 +93,10 @@ function updateControls() {
   $('preview-button').disabled = occupied || !state.engines[engine] || (needsVoice && !selectedVoice());
   for (const id of ['extract-button', 'browse-game', 'demo-button', 'demo-empty', 'demo-side', 'new-project', 'import-project']) $(id).disabled = occupied;
   for (const id of ['tts-engine', 'voice-select', 'voice-path', 'voice-language', 'voice-emotion', 'output-path', 'worker-count', 'game-path']) $(id).disabled = occupied;
+  if ($('dub-direction').value) {
+    $('voice-language').value = $('dub-direction').value;
+    $('voice-language').disabled = true;
+  }
   document.querySelectorAll('.character-model input,.character-model select').forEach(node => { node.disabled = occupied; });
   document.querySelectorAll('.play-button').forEach(node => { node.disabled = occupied || (!state.engines[engine] && node.dataset.hasAudio !== '1'); });
   $('project-json-open').disabled = occupied;
@@ -124,13 +129,20 @@ function renderLines() {
     const result = resultFor(line);
     const row = el('tr'); row.append(el('td', 'line-number', String(state.lines.indexOf(line) + 1).padStart(2, '0')));
     const who = el('td', 'speaker-cell'); who.append(speakerBadge(line.speaker)); row.append(who);
-    const text = el('td', 'line-text', line.text); text.append(el('span', 'line-source', `${line.source_file}:${line.line_no || '—'}`)); row.append(text);
+    const text = el('td', 'line-text', line.text);
+    if (result?.metadata?.translated_to) {
+      const translated = el('div', 'translated-line', result.text);
+      translated.lang = result.metadata.translated_to; translated.dir = 'auto'; text.append(translated);
+    }
+    text.append(el('span', 'line-source', `${line.source_file}:${line.line_no || '—'}`)); row.append(text);
     const status = result?.status || 'pending';
-    const statusLabel = ({done: 'Готово', failed: 'Ошибка', cancelled: 'Остановлена', pending: 'К генерации', running: 'Запись'})[status] || 'К генерации';
+    const statusLabel = ({translated: 'Переведено', done: 'Готово', failed: 'Ошибка', cancelled: 'Остановлена', pending: 'К генерации', running: 'Запись'})[status] || 'К генерации';
     const badge = el('span', `line-state ${status}`); badge.append(el('i'), document.createTextNode(statusLabel));
     if (result?.error) badge.title = result.error;
     const statusCell = el('td'); statusCell.append(badge); row.append(statusCell);
-    const playCell = el('td'); const play = el('button', 'play-button'); play.type = 'button';
+    const playCell = el('td');
+    if (result?.status === 'translated') { row.append(playCell); body.append(row); return; }
+    const play = el('button', 'play-button'); play.type = 'button';
     play.dataset.hasAudio = result?.status === 'done' ? '1' : '';
     play.setAttribute('aria-label', `Прослушать реплику ${state.lines.indexOf(line) + 1}`); play.title = result?.status === 'done' ? 'Прослушать готовое аудио' : 'Создать пробную запись'; play.append(icon('play'));
     play.addEventListener('click', () => preview(line)); playCell.append(play); row.append(playCell); body.append(row);
@@ -150,7 +162,7 @@ function renderVoiceOptions() {
   $('engine-hint').textContent = state.engines[engine] ? 'Движок доступен на этом компьютере; модель проверяется пробной записью.' : ({piper:'Piper не установлен. Установите piper-tts перед генерацией.',xtts:'XTTS не установлен. Назначить образцы можно сейчас; для синтеза нужен движок.',silero:'Silero не установлен.',bark:'Bark не установлен.'})[engine];
   $('voice-hint').textContent = engine === 'piper' ? 'Нужны .onnx и .onnx.json рядом. Модели из папки models/ появятся в списке.' : engine === 'xtts' ? 'Укажите WAV-образец голоса для клонирования.' : engine === 'silero' ? 'Текущий адаптер Silero использует английскую модель. Голос: en_0.' : 'Укажите пресет Bark или оставьте поле пустым.';
   $('voice-path').placeholder = engine === 'piper' ? '/путь/к/голосу.onnx' : engine === 'xtts' ? '/путь/к/образцу.wav' : engine === 'silero' ? 'en_0' : 'v2/en_speaker_6';
-  if (engine === 'silero') $('voice-language').value = 'en';
+  if (engine === 'silero' && !$('dub-direction').value) $('voice-language').value = 'en';
   renderCharacters(); updateControls();
 }
 function preserveManualChoice() {
@@ -184,13 +196,15 @@ function renderCharacters() {
 }
 async function refreshVoices() {
   const data = await api('/api/studio/voices'); state.voices = data.voices; state.engines = data.engines;
+  loadDubbingLanguages(data.translation_languages);
   renderVoiceOptions();
 }
 async function loadGame(demo = false, restored = null) {
   if (running() || state.loading || state.busy || state.setupBusy) return;
   const path = $('game-path').value.trim();
   if (!path) { notice('Укажите полный путь к папке игры.', 'error'); $('game-path').focus(); return; }
-  if (!restored && state.game && state.game !== path) { resetProject(); $('game-path').value = path; }
+  const preferredTarget = preferredDubbingTarget;
+  if (!restored && state.game && state.game !== path) { resetProject(); preferredDubbingTarget = preferredTarget; $('game-path').value = path; }
   state.loading = true; updateControls(); notice('Читаем сценарии и собираем персонажей…');
   $('extract-button').textContent = 'Читаем…'; const version = ++projectVersion;
   let opened = null; window.agvAuto?.prepare();
@@ -201,7 +215,7 @@ async function loadGame(demo = false, restored = null) {
     if (data.ready === false) { window.agvAuto?.issue(data); return; }
     $('game-path').value = data.path;
     if (data.language && !restored) {
-      $('dub-direction').value = data.language === 'en' ? 'ru' : '';
+      $('dub-direction').value = preferredDubbingTarget ?? (data.language === 'en' ? 'ru' : '');
       $('voice-language').value = $('dub-direction').value || data.language;
     }
     state.lines = data.lines; state.characters = data.characters; state.engine = data.engine; state.game = data.path;
@@ -270,7 +284,9 @@ function renderJob() {
   if (state.job) window.agvAuto?.job(state.job);
   const box = $('jobs-content'); box.replaceChildren(); const job = state.job;
   if (!job) { const empty = el('div', 'job-empty'); empty.append(el('h3', '', 'Студия готова к записи'), el('p', '', 'Выберите модель голоса и папку результата. Готовые реплики будут доступны для прослушивания.')); box.append(empty); return; }
-  box.append(el('h3', 'job-status-heading', statusNames[job.status] || job.status));
+  const heading = job.text_only && job.status === 'done' ? 'Перевод готов' :
+    job.text_only && job.status === 'running' ? 'Переводим реплики' : statusNames[job.status] || job.status;
+  box.append(el('h3', 'job-status-heading', heading));
   const processed = (job.succeeded || 0) + (job.failed || 0);
   box.append(el('p', 'job-summary', job.total ? `${job.succeeded} из ${job.total} реплик готовы · Ошибок: ${job.failed || 0}${job.cached ? ` · Из кэша: ${job.cached}` : ''}` : activeStatuses.has(job.status) ? 'Проверяем модель и сценарии…' : 'Запись не началась.'));
   if (running()) {
@@ -303,7 +319,7 @@ function renderJob() {
     }
     const installation = job.result.installation;
     const installedName = installation?.engine === 'renpy' ? 'Ren’Py' : 'Lost Coast';
-    if (!job.result.trial) box.append(el('p', 'job-help', installation?.status === 'installed' ? installation.verification?.status === 'ok' ? `Озвучка ${installedName} установлена и проверена. Перезапустите игру. Исходные файлы сохранены.` : 'Мод установлен, но проверка не подтверждена. Нажмите «Проверить озвучку».' : installation?.status === 'disabled' ? installation.note : 'WAV-файлы и отчёт сохранены. Для этой игры подключение аудио выполняется отдельно.'));
+    if (!job.result.trial && !job.text_only) box.append(el('p', 'job-help', installation?.status === 'installed' ? installation.verification?.status === 'ok' ? `Озвучка ${installedName} установлена и проверена. Перезапустите игру. Исходные файлы сохранены.` : 'Мод установлен, но проверка не подтверждена. Нажмите «Проверить озвучку».' : installation?.status === 'disabled' ? installation.note : 'WAV-файлы и отчёт сохранены. Для этой игры подключение аудио выполняется отдельно.'));
     if (installation?.error) box.append(el('p', 'notice error', friendlyError(new Error(installation.error))));
     if (installation?.status === 'installed') {
       const playGame = el('button', 'button primary', `Запустить ${installedName}`);
@@ -347,13 +363,17 @@ function renderJob() {
     }); box.append(folder);
     const actions = el('div', 'job-result-actions'); const manifest = el('button', 'button secondary', 'Скачать манифест'); manifest.prepend(icon('download'));
     manifest.addEventListener('click', () => downloadJson(job.result, 'anygamevoice.json')); actions.append(manifest);
-    if (job.succeeded) { const listen = el('button', 'button secondary', 'К готовым репликам'); listen.addEventListener('click', () => { setView('ready'); setTab('dialogue'); }); actions.append(listen); }
+    if (job.text_only) {
+      const read = el('button', 'button secondary', 'Посмотреть перевод');
+      read.addEventListener('click', () => { setView('all'); setTab('dialogue'); });
+      actions.append(read);
+    } else if (job.succeeded) { const listen = el('button', 'button secondary', 'К готовым репликам'); listen.addEventListener('click', () => { setView('ready'); setTab('dialogue'); }); actions.append(listen); }
     box.append(actions);
   }
   $('mini-progress').hidden = false;
   $('progress').max = job.total || 1; if (job.total) $('progress').value = processed; else if (activeStatuses.has(job.status)) $('progress').removeAttribute('value'); else $('progress').value = 0;
   $('progress-label').textContent = job.total ? `${job.succeeded}/${job.total} готовы${job.failed ? ` · ${job.failed} ошибок` : ''}` : statusNames[job.status];
-  $('project-state').textContent = running() ? 'Идёт запись' : job.status === 'done' ? 'Аудио готово' : 'Диалоги извлечены';
+  $('project-state').textContent = job.text_only ? heading : running() ? 'Идёт запись' : job.status === 'done' ? 'Аудио готово' : 'Диалоги извлечены';
   $('job-indicator').hidden = !running(); updateControls();
 }
 async function pollJob(id) {
@@ -362,18 +382,19 @@ async function pollJob(id) {
     if (state.job?.id !== id) return;
     state.job = job; state.resultIndex = new Map((job.result?.lines || []).map(item => [JSON.stringify([item.source_file, item.line_no, item.speaker, item.metadata?.original_text ?? item.text]), item])); renderJob(); renderLines();
     if (activeStatuses.has(job.status)) pollTimer = setTimeout(() => pollJob(id), 1000);
+    else if (job.text_only && job.status === 'done') notice('Перевод сохранён. Откройте «Диалоги», чтобы прочитать реплики.', 'success');
     else notice(job.status === 'done' ? job.result?.installation?.verification?.status === 'ok' ? 'Озвучка установлена и проверена. Можно запускать игру.' : 'Аудиофайлы созданы. Готовые реплики можно прослушать в таблице.' : job.error ? friendlyError(new Error(job.error)) : statusNames[job.status], job.status === 'done' ? 'success' : job.status === 'failed' || job.status === 'partial' ? 'error' : '');
   } catch (error) {
     if (state.job?.id !== id) return;
     notice(`${friendlyError(error)} Повторим проверку статуса через несколько секунд.`, 'error'); pollTimer = setTimeout(() => pollJob(id), 4000);
   }
 }
-async function generate(trial = false) {
-  if ($('generate-button').disabled) return;
+async function generate(trial = false, textOnly = false) {
+  if ($(textOnly ? 'dub-text' : 'generate-button').disabled) return;
   state.busy = true; updateControls(); notice('Подготавливаем генерацию…');
   try {
-    const data = await api('/api/studio/mod', {...settings(), ...dubbingRequest(trial)});
-    state.job = {id: data.job_id, status: 'running', total: 0, succeeded: 0, failed: 0};
+    const data = await api('/api/studio/mod', {...settings(), ...dubbingRequest(trial), text_only: textOnly});
+    state.job = {id: data.job_id, text_only: textOnly, status: 'running', total: 0, succeeded: 0, failed: 0};
     window.agvAuto?.remember(data.job_id);
     setTab('jobs'); renderJob(); await pollJob(data.job_id);
   } catch (error) { notice(friendlyError(error), 'error'); }
@@ -387,6 +408,7 @@ function resetProject() {
   if (running() || state.busy || state.setupBusy || state.loading) return;
   window.agvModels?.reset(); window.agvAuto?.reset();
   state.voiceBlend = defaultVoiceBlend();
+  preferredDubbingTarget = null;
   setDubbing({translate_to:'ru', ...window.agvModels?.translationDefaults()});
   projectVersion++; clearTimeout(pollTimer); state.lines = []; state.characters = []; state.assignments = Object.create(null); state.game = ''; state.engine = ''; state.demo = false; state.job = null; state.resultIndex.clear();
   $('project-title').textContent = 'Начните новую историю.'; $('heading-kicker').textContent = 'ВАША ИГРА. ВАШИ ГОЛОСА.';

@@ -1058,6 +1058,9 @@
   }
   window.agvModels = {
     translationDefaults,
+    refreshDubbingVoices() {
+      if (state.game) refresh($('auto-mode').checked && $('tts-engine').value === 'piper' && !selectedVoice());
+    },
     translationToken(provider, endpoint) {
       if (provider === 'openrouter') return routerSessionKey;
       return provider === 'custom' && endpoint === customSessionKey?.baseUrl ? customSessionKey.token : '';

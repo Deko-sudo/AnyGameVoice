@@ -64,12 +64,19 @@
       if (useSelection && !/SDK|FFmpeg|renpy.sh/.test(message)) {
         $('manual-settings').open = true;
         notice(`${message} Проверьте выбранный голос и назначения персонажей, затем повторите запуск.`, 'error');
-      } else if (/SDK|Piper|голос|FFmpeg|renpy.sh/.test(message)) {
+      } else if (['ru','en'].includes($('voice-language').value) && /SDK|Piper|голос|FFmpeg|renpy.sh/.test(message)) {
         window.agvSetup?.offer(trial ? null : useSelection ? 'selected' : 'auto');
       }
     } finally { startPending = false; state.busy = false; updateControls(); }
   }
   function job(data) {
+    if (data.text_only) {
+      $('auto-retry').hidden = true;
+      const active = activeStatuses.has(data.status);
+      show(active ? 'dialogue' : 'result', active ? 'Переводим реплики' : data.status === 'done' ? 'Перевод готов' : 'Перевод остановлен',
+        data.error || `Переведено: ${data.succeeded || 0} из ${data.total || state.lines.length}.`);
+      return;
+    }
     if ('trial' in data) retryTrial = data.trial;
     if (data.result?.trial) {
       show('voice', 'Пробный дубляж', 'Послушайте реплики в разделе «Генерация». Полный запуск доступен в панели озвучки.', data.status !== 'done');

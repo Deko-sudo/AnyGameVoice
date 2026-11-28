@@ -113,3 +113,44 @@ def test_legacy_mod_translation(client, project, translations, monkeypatch):
     assert failed['failed'] == 4
     assert 'temporary-key' not in json.dumps(failed)
     assert 'temporary-key' not in (Path(project['out']) / 'report.json').read_text()
+
+
+@pytest.mark.parametrize('target', 'en zh hi es ar fr bn pt id ur ru de ja pcm arz mr vi te sw ha'.split())
+def test_translation_target_then_dub(client, project, monkeypatch, target):
+    from app.core.dubbing_languages import LANGUAGES
+
+    display_name, prompt_name = LANGUAGES[target]
+    assert client.get('/api/studio/voices').json()['translation_languages'][target] == display_name
+    originals = []
+
+    def translate(provider, model, prompt, system, base_url, api_key):
+        assert (prompt_name if target != 'ru' else 'русский') in prompt
+        original = prompt.splitlines()[-1]
+        originals.append(original)
+        return f'{target} {original}'
+
+    monkeypatch.setattr(cloud_providers, 'chat_completion', translate)
+    # The text action must work on a machine with no TTS backend or voice.
+    monkeypatch.setattr(generator, 'validate_synthesis', lambda *_: pytest.fail('Text mode loaded TTS'))
+    route = '/api/studio/mod'
+    settings = {**project, 'translate_to': target, 'language_subdir': target != 'ru'}
+    job = finish_job(client, route, {**settings, 'text_only': True})
+    result = job['result']
+    assert result['text_only'] and result['status'] == 'done' and result['succeeded'] == 4
+    assert not list(Path(result['out']).glob('*.wav'))
+    assert Path(result['out']).name == f'translations-{target}'
+    assert [row['text'] for row in result['lines']] == [f'{target} Line {i}.' for i in range(4)]
+    assert client.get(f"/api/studio/mod/{job['id']}/audio/{result['lines'][0]['id']}").status_code == 404
+    assert 'temporary-key' not in (Path(result['out']) / 'anygamevoice.json').read_text()
+
+    def speak(text, dest, **settings):
+        assert text.startswith(target + ' ') and settings['language'] == target
+        Path(dest).write_bytes(wav_bytes())
+
+    monkeypatch.setattr(generator, 'validate_synthesis', lambda *_: None)
+    monkeypatch.setattr(generator, 'generate_voice_to_file', speak)
+    dubbed = finish_job(client, route, {**settings, 'trial': True})['result']
+    assert dubbed['succeeded'] == 3
+    expected_dir = Path(project['out']) if target == 'ru' else Path(project['out']) / f'dub-{target}'
+    assert Path(dubbed['out']) == expected_dir / '.agv-trial'
+    assert originals == [f'Line {i}.' for i in range(4)]

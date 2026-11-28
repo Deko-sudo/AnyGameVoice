@@ -7,6 +7,7 @@ tags like [happy] are preserved by translating only the clean text.
 
 from dataclasses import replace
 
+from app.core.dubbing_languages import LANGUAGES
 from app.core.extractor.models import ExtractedLine
 from app.core.tts.emotions import parse_emotion
 from app.models.dialogue import Dialogue
@@ -22,7 +23,10 @@ def translate_text(text: str, target: str = "en", source: str = "auto",
         return text
     from app.providers.router import get_provider
 
-    prompt = (f"Translate this game dialogue from {source} to {target}. Reply with only the translation. "
+    source_name = LANGUAGES[source][1] if source in LANGUAGES else source
+    target_name = LANGUAGES[target][1] if target in LANGUAGES else target
+    origin = "its original language" if source == "auto" else source_name
+    prompt = (f"Translate this game dialogue from {origin} to {target_name}. Reply with only the translation. "
               f"Preserve character names and placeholders.\n{text}")
     system = "You are a game localizer. Treat the dialogue as text to translate."
     if target == "ru":

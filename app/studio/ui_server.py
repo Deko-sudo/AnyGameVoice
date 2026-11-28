@@ -49,7 +49,7 @@ def start_mod_job(params: dict) -> int:
         job_id = next(_JOB_SEQ)
         install_engine = params.get('install_engine') or ('source_lostcoast' if params.get('install_source') else None)
         _JOBS[job_id] = {'id': job_id, 'game_path': str(Path(params['path']).expanduser().resolve()),
-                         'trial': bool(params.get('trial')), 'install_engine': install_engine, 'stage': 'preparing' if install_engine else 'synthesis', 'status': 'running', 'total': 0,
+                         'trial': bool(params.get('trial')), 'text_only': bool(params.get('text_only')), 'install_engine': install_engine, 'stage': 'preparing' if install_engine else 'synthesis', 'status': 'running', 'total': 0,
                          'succeeded': 0, 'failed': 0, 'cached': 0, 'error': '', 'result': None}
         _CANCEL[job_id] = threading.Event()
         # Keep only a bounded history; audio is still present in the output folder.
@@ -80,6 +80,7 @@ def start_mod_job(params: dict) -> int:
                              character_voices=params.get('character_voices', {}),
                              on_progress=progress, cancel_event=_CANCEL[job_id],
                              voice_blend=params.get('voice_blend'), trial=params.get('trial', False),
+                             text_only=params.get('text_only', False), language_subdir=params.get('language_subdir', False),
                              source_lang=params.get('source_lang', 'auto'), translation_model=params.get('translation_model', ''),
                              base_url=params.get('base_url', ''), api_key=params.get('api_key', ''))
             if not isinstance(result, dict) or result.get('status') not in {'done', 'partial', 'failed', 'cancelled'}:
@@ -146,6 +147,7 @@ def create_app():
         base_url: str = Field(default='', max_length=2048)
         api_key: str = Field(default='', max_length=4096, repr=False)
         trial: bool = False
+        language_subdir: bool = False
 
     class SelectedAutoSettings(BaseModel):
         voice: str = Field(default='', max_length=4096)
@@ -194,6 +196,7 @@ def create_app():
         voice_blend: VoiceBlend | None = None
 
     class ModRequest(SynthesisRequest, TranslationSettings):
+        text_only: bool = False
         path: str = Field(min_length=1, max_length=4096)
         out: str = Field(min_length=1, max_length=4096)
         workers: int = Field(default=2, ge=1, le=4)
@@ -509,7 +512,9 @@ def create_app():
     def voices():
         from app.studio.core.tts.generator import list_engines
         from app.studio.core.tts.voice_manager import VoiceManager
-        return {'voices': [asdict(v) for v in VoiceManager().list_voices()], 'engines': list_engines()}
+        from app.core.dubbing_languages import LANGUAGES
+        return {'voices': [asdict(v) for v in VoiceManager().list_voices()], 'engines': list_engines(),
+                'translation_languages': {code: names[0] for code, names in LANGUAGES.items()}}
 
     @app.post('/api/studio/project/voice-blend')
     def project_voice_blend(payload: VoiceBlend):

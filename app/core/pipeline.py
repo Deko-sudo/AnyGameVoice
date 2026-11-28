@@ -16,6 +16,7 @@ import wave
 from app.studio.core.extractor.dialogue_extractor import extract_dialogue
 from app.studio.core.game_detector.detector import detect_engine
 from app.studio.core.tts import generator
+from app.core.dubbing_languages import LANGUAGES
 from app.core.tts.reference import VoiceBlend
 from app.utils.atomic import atomic_json
 from app.utils.audio_utils import to_srt
@@ -62,11 +63,18 @@ def _publish_owned(temporary: str, destination: Path, expected_hash: str | None)
         os.unlink(temporary)
 
 
+def _text_result(game, output, language, rows, total, status):
+    return {'schema': 1, 'game_path': str(game), 'out': str(output), 'text_only': True,
+            'status': status, 'language': language, 'total': total, 'succeeded': len(rows),
+            'cached': sum(row['cached'] for row in rows), 'failed': int(status == 'failed'),
+            'lines': rows}
+
+
 def run_batch(folder: str, out: str, voice: str = '', engine: str = 'piper', workers: int = 2,
               emotion: str = 'neutral', translate_to: str = '', provider: str = 'ollama',
               language: str = 'en', character_voices: dict | None = None,
               on_progress=None, cancel_event=None, voice_blend=None, source_lang='auto',
-              translation_model='', base_url='', api_key='', trial=False) -> dict:
+              translation_model='', base_url='', api_key='', trial=False, text_only=False, language_subdir=False) -> dict:
     """Export audio only. This does not install anything into a game."""
     game = Path(folder).expanduser().resolve()
     output = Path(out).expanduser().resolve()
@@ -81,16 +89,32 @@ def run_batch(folder: str, out: str, voice: str = '', engine: str = 'piper', wor
         raise ValueError(f'No supported dialogue found (engine: {detect_engine(str(game))}).')
     if len(lines) > 10000:
         raise ValueError('This preview release supports up to 10,000 dialogue lines per project.')
+    if text_only and trial:
+        raise ValueError('Для перевода текста используйте полный список реплик.')
+    if text_only and translate_to not in LANGUAGES:
+        raise ValueError('Выберите язык перевода.')
+    text_dir = output / f'translations-{translate_to}' if translate_to in LANGUAGES else None
+    if text_dir and text_dir.is_symlink():
+        raise ValueError('Каталог перевода не может быть символической ссылкой.')
+    if language_subdir and not text_only:
+        if translate_to not in LANGUAGES:
+            raise ValueError('Выберите язык дубляжа.')
+        output = output / f'dub-{translate_to}'
+        if output.is_symlink():
+            raise ValueError('Каталог дубляжа не может быть символической ссылкой.')
     trial_dir = output / '.agv-trial'
     if trial_dir.is_symlink():
         raise ValueError('Каталог пробного дубляжа не может быть символической ссылкой.')
     if trial:
         lines = lines[:3]
         output = trial_dir
+    if text_only:
+        output = text_dir
     voices = character_voices or {}
     policy = VoiceBlend.model_validate(voice_blend) if voice_blend is not None else VoiceBlend()
     blends = {}
-    for selected in {voices.get(line.speaker) or voice for line in lines}:
+    selected_voices = set() if text_only else {voices.get(line.speaker) or voice for line in lines}
+    for selected in selected_voices:
         generator.validate_synthesis(engine, selected)
         if translate_to and engine == 'piper' and Path(str(selected) + '.json').is_file():
             config = json.loads(Path(str(selected) + '.json').read_text(encoding='utf-8'))
@@ -98,7 +122,8 @@ def run_batch(folder: str, out: str, voice: str = '', engine: str = 'piper', wor
             if voice_lang and voice_lang != translate_to.split('-')[0]:
                 raise ValueError(f'Язык голоса Piper ({voice_lang}) отличается от языка перевода ({translate_to}). Выберите подходящий голос.')
         blends[selected] = policy.for_voice(engine, selected)
-    translation = [1, source_lang, translate_to, provider, translation_model, base_url] if translate_to else None
+    prompt_version = 1 if translate_to == 'ru' else 2
+    translation = [prompt_version, source_lang, translate_to, provider, translation_model, base_url] if translate_to else None
     if translate_to:
         language = translate_to
     cancelled = cancel_event or threading.Event()
@@ -118,6 +143,8 @@ def run_batch(folder: str, out: str, voice: str = '', engine: str = 'piper', wor
             old = json.loads(manifest.read_text(encoding='utf-8'))
             if old.get('schema') != 1 or old.get('game_path') != str(game):
                 raise ValueError('Output folder contains a different project. Choose another folder.')
+        if text_only and old and not old.get('text_only'):
+            raise ValueError('Каталог перевода занят другим результатом.')
         previous = {item['id']: item for item in old.get('lines', [])}
         trial_rows = {}
         trial_manifest = trial_dir / 'anygamevoice.json'
@@ -125,6 +152,13 @@ def run_batch(folder: str, out: str, voice: str = '', engine: str = 'piper', wor
             sample = json.loads(trial_manifest.read_text(encoding='utf-8'))
             if sample.get('schema') == 1 and sample.get('game_path') == str(game):
                 trial_rows = {row['id']: row for row in sample.get('lines', [])}
+        text_rows = {}
+        if text_dir and not text_only:
+            saved = text_dir / 'anygamevoice.json'
+            if saved.is_file() and not saved.is_symlink():
+                text_result = json.loads(saved.read_text(encoding='utf-8'))
+                if text_result.get('game_path') == str(game) and text_result.get('text_only'):
+                    text_rows = {row['id']: row for row in text_result['lines']}
         owned_audio = dict(old.get('owned_audio_sha256', {}))
         for item in old.get('lines', []):
             if item.get('sha256'):
@@ -145,9 +179,13 @@ def run_batch(folder: str, out: str, voice: str = '', engine: str = 'piper', wor
             line_id = _key([*identity, occurrence])[:20]
             if translation:
                 if cancelled.is_set():
+                    if text_only:
+                        result = _text_result(game, output, language, items, len(lines), 'cancelled')
+                        atomic_json(manifest, result)
+                        return result
                     raise RuntimeError('Перевод отменён.')
                 origin = line.text
-                cached = next((r for r in (previous.get(line_id), trial_rows.get(line_id))
+                cached = next((r for r in (previous.get(line_id), trial_rows.get(line_id), text_rows.get(line_id))
                                if r and r.get('translation') == translation
                                and r.get('metadata', {}).get('original_text') == origin and r.get('text')), None)
                 if cached:
@@ -159,8 +197,16 @@ def run_batch(folder: str, out: str, voice: str = '', engine: str = 'piper', wor
                         line = translate_lines([line], translate_to, source_lang, provider, api_key,
                                                translation_model, base_url)[0]
                     except Exception:
+                        if text_only and items:
+                            atomic_json(manifest, _text_result(game, output, language, items, len(lines), 'failed'))
                         raise RuntimeError(f'Перевод реплики {index + 1} не получен. Проверьте модель, доступ и лимит провайдера.') from None
                 lines[index] = line
+            if text_only:
+                items.append({**asdict(line), 'id': line_id, 'translation': translation,
+                              'status': 'translated', 'cached': bool(cached)})
+                if on_progress:
+                    on_progress({'total': len(lines), 'succeeded': len(items), 'failed': 0, 'cached': 0})
+                continue
             selected_voice = voices.get(line.speaker) or voice
             model = Path(selected_voice).expanduser()
             model_state = []
@@ -179,6 +225,10 @@ def run_batch(folder: str, out: str, voice: str = '', engine: str = 'piper', wor
             items.append({**asdict(line), 'translation': translation, 'id': line_id, 'voice': selected_voice,
                           'filename': f'{line_id}.wav', 'fingerprint': fingerprint,
                           'status': 'pending', 'error': '', 'duration': 0.0})
+        if text_only:
+            result = _text_result(game, output, language, items, len(lines), 'done')
+            atomic_json(manifest, result)
+            return result
         result = {'schema': 1, 'game_path': str(game), 'out': str(output),
                   'engine': engine, 'voice': voice, 'character_voices': voices,
                   'emotion': emotion, 'language': language, 'status': 'running',

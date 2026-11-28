@@ -44,6 +44,8 @@ class XTTSEngine(BaseTTSEngine):
         import tempfile, os
 
         tts = self._load()
+        if language == 'zh':
+            language = 'zh-cn'
         if blend is not None:
             return self._synthesize_blended(tts.synthesizer, text, voice, language, blend)
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
