@@ -21,6 +21,7 @@ function setDubbing(value = {}) {
   $('dub-format').value = value.api_format || 'openai_chat';
   $('dub-key').value = '';
   syncDubbing();
+  window.syncMaterialSelects?.();
 }
 function safeDubbingEndpoint(input) {
   if (!input) return '';

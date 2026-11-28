@@ -847,3 +847,53 @@ progress,progress::-webkit-progress-bar { background:var(--md-secondary-containe
   .project-heading { margin-bottom:18px; }
   .project-heading p { font-size:12px; }
 }
+
+/* Aligned Material controls for the dubbing panel. */
+.settings-panel { margin-top:0; min-width:0; }
+.dubbing-settings {
+  display:grid;
+  gap:12px;
+  margin:4px 16px 16px;
+  padding:16px;
+  border:1px solid var(--md-outline-variant);
+  border-radius:16px;
+}
+.dubbing-settings legend { padding:0 6px; color:var(--md-on-surface); font-size:13px; font-weight:600; }
+.dubbing-settings label { margin:0; line-height:1.35; }
+#dub-options:not([hidden]), #dub-custom:not([hidden]) { display:grid; gap:10px; min-width:0; }
+#dub-options .field-hint, .dubbing-settings > .field-hint { margin:0; line-height:1.5; overflow-wrap:anywhere; }
+.dubbing-settings .button { width:100%; min-width:0; justify-content:center; text-align:center; white-space:normal; }
+.dubbing-settings :is(input, select) { width:100%; min-width:0; }
+#dub-auth:not([hidden]) { display:grid; gap:10px; }
+.material-select-trigger {
+  display:flex; align-items:center; justify-content:space-between; gap:12px;
+  width:100%; min-width:0; min-height:48px; padding:0 14px;
+  border:1px solid var(--md-outline); border-radius:12px;
+  color:var(--md-on-surface); background:var(--md-surface-container-high);
+  text-align:left; font:inherit; font-size:13px; cursor:pointer;
+}
+.material-select-trigger:hover { border-color:var(--md-primary); }
+.material-select-trigger:focus-visible { outline:2px solid var(--md-primary); outline-offset:2px; }
+.material-select-trigger:disabled { opacity:.5; cursor:not-allowed; }
+.material-select-value { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.material-select-arrow { flex:none; width:8px; height:8px; border-right:2px solid currentColor; border-bottom:2px solid currentColor; transform:rotate(45deg) translateY(-2px); }
+.material-select-trigger[aria-expanded="true"] .material-select-arrow { transform:rotate(225deg) translate(-2px, -1px); }
+.material-select-menu {
+  position:fixed; inset:auto; margin:0; padding:6px; overflow:auto; overscroll-behavior:contain;
+  border:1px solid var(--md-outline-variant); border-radius:16px;
+  background:var(--md-surface-container-high); color:var(--md-on-surface);
+  box-shadow:0 12px 32px rgb(0 0 0 / .24); scrollbar-width:thin;
+}
+.material-select-option {
+  display:flex; align-items:center; justify-content:space-between; gap:12px;
+  width:100%; min-height:44px; padding:10px 12px; border:0; border-radius:10px;
+  color:inherit; background:transparent; text-align:left; font:inherit; font-size:13px; cursor:pointer;
+}
+.material-select-option:hover, .material-select-option:focus-visible { background:var(--md-secondary-container); outline:none; }
+.material-select-option[aria-selected="true"] { background:var(--md-primary-container); color:var(--md-on-primary-container); font-weight:650; }
+.material-select-check { opacity:0; flex:none; }
+.material-select-option[aria-selected="true"] .material-select-check { opacity:1; }
+@media (max-width:760px) {
+  .dubbing-settings { margin:4px 20px 20px; padding:18px; }
+  .material-select-trigger { font-size:14px; }
+}

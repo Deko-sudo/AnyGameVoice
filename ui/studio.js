@@ -90,6 +90,7 @@ function updateControls() {
   $('dub-trial').disabled = $('generate-button').disabled;
   for (const field of ['dub-direction','dub-provider','dub-model','dub-endpoint','dub-format','dub-key']) $(field).disabled = occupied;
   syncDubbing();
+  window.syncMaterialSelects?.();
   $('auto-selected').disabled = $('generate-button').disabled;
   $('preview-button').disabled = occupied || !state.engines[engine] || (needsVoice && !selectedVoice());
   for (const id of ['extract-button', 'browse-game', 'demo-button', 'demo-empty', 'demo-side', 'new-project', 'import-project']) $(id).disabled = occupied;
