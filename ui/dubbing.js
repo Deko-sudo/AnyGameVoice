@@ -38,10 +38,9 @@ function dubbingSettings() {
 function syncDubbing() {
   const options = dubbingSettings();
   $('dub-options').hidden = !options.translate_to;
-  if (options.provider === 'ollama') $('dub-model').setAttribute('list', 'dub-model-list');
-  else $('dub-model').removeAttribute('list');
+  window.agvModels?.updateDubbingModels(options.provider);
   $('dub-custom').hidden = options.provider !== 'custom';
-  $('dub-auth').hidden = !['custom','openrouter'].includes(options.provider);
+  $('dub-auth').hidden = options.provider === 'ollama' || !options.provider;
   $('dub-text').hidden = !options.translate_to;
   const path = selectedVoice();
   const selected = state.voices.find(item => item.path === path);
@@ -66,7 +65,7 @@ function dubbingRequest(trial) {
   }
   if (config.provider !== 'ollama') {
     const count = trial ? Math.min(3, state.lines.length) : state.lines.length;
-    const host = config.base_url || 'OpenRouter';
+    const host = config.base_url || $('dub-provider').selectedOptions[0].textContent;
     if (!window.confirm(`Отправить до ${count} реплик в ${host} для перевода моделью ${config.translation_model}? Провайдер может списать оплату.`)) {
       throw Error('Облачный перевод отменён.');
     }

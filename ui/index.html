@@ -120,8 +120,8 @@
           </details>
           <fieldset class="dubbing-settings"><legend>Дубляж сцены</legend>
             <label for="dub-direction">Язык перевода</label><select id="dub-direction"><option value="">Озвучить исходный текст</option><option value="ru" selected>Русский</option></select>
-            <div id="dub-options"><label for="dub-provider">Переводчик</label><select id="dub-provider"><option value="" disabled>Выберите переводчик</option><option value="ollama" selected>Ollama · на устройстве</option><option value="openrouter">OpenRouter</option><option value="custom">Свой совместимый API</option></select>
-            <label for="dub-model">Модель перевода</label><input id="dub-model" placeholder="ID модели у провайдера" maxlength="200" list="dub-model-list"><datalist id="dub-model-list"></datalist>
+            <div id="dub-options"><label for="dub-provider">Переводчик</label><select id="dub-provider"><option value="" disabled>Выберите переводчик</option><option value="ollama" selected>Ollama · на устройстве</option><option value="openrouter">OpenRouter</option><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="groq">Groq</option><option value="mistral">Mistral AI</option><option value="deepseek">DeepSeek</option><option value="custom">Свой совместимый API</option></select>
+            <label for="dub-model">Модель перевода</label><input id="dub-model" placeholder="ID модели у провайдера" maxlength="200" list="dub-model-list"><datalist id="dub-model-list"></datalist><p class="field-hint">Выберите найденную модель или введите её ID. Облачные провайдеры используют API-ключ.</p>
             <label id="dub-custom" hidden>Адрес API<input id="dub-endpoint" type="url" placeholder="https://…/v1"></label>
             <label id="dub-auth" hidden>Ключ API<input id="dub-key" type="password" autocomplete="off" placeholder="Только для текущего сеанса"></label></div>
             <button type="button" id="dub-text" class="button secondary" disabled>Перевести текст</button>

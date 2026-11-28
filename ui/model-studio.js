@@ -895,9 +895,7 @@
     researchDescription();
   }
   function renderResearchOptions(usePreferences = false) {
-    $('dub-model-list').replaceChildren(...(plan?.research || [])
-      .filter(item => item.installed && !item.manual_only)
-      .map(item => new Option(item.name, item.id)));
+    updateDubbingModels($('dub-provider').value);
     const oldResearch = usePreferences ? '' : $('research-model').value;
     const configured = savedCloudResearch();
     $('research-model').replaceChildren(new Option('Выберите модель исследования', ''));
@@ -1050,6 +1048,12 @@
   });
   $('voice-language').addEventListener('change', () => { if (state.game) refresh(false); });
   document.addEventListener('agv:controls', syncControls);
+  function updateDubbingModels(provider) {
+    const models = provider === 'ollama'
+      ? (plan?.research || []).filter(item => item.installed && !item.manual_only)
+      : providerResults.get(provider)?.models || [];
+    $('dub-model-list').replaceChildren(...models.map(item => new Option(item.name || item.id, item.id)));
+  }
   function translationDefaults() {
     if (welcomePreferences?.mode !== 'cloud') return {provider:'ollama', translation_model:welcomePreferences?.research || ''};
     if (!savedCloudResearch()) return {provider:'', translation_model:''};
@@ -1058,6 +1062,7 @@
   }
   window.agvModels = {
     translationDefaults,
+    updateDubbingModels,
     refreshDubbingVoices() {
       if (state.game) refresh($('auto-mode').checked && $('tts-engine').value === 'piper' && !selectedVoice());
     },

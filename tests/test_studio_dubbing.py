@@ -154,3 +154,29 @@ def test_translation_target_then_dub(client, project, monkeypatch, target):
     expected_dir = Path(project['out']) if target == 'ru' else Path(project['out']) / f'dub-{target}'
     assert Path(dubbed['out']) == expected_dir / '.agv-trial'
     assert originals == [f'Line {i}.' for i in range(4)]
+
+
+@pytest.mark.parametrize('provider', ['openai', 'anthropic', 'groq', 'mistral', 'deepseek'])
+def test_cloud_translation_providers_receive_model_and_key(client, project, monkeypatch, provider):
+    from app.providers.router import PROVIDERS
+
+    calls = []
+
+    def mock_post(self, url, payload, headers=None, timeout=60):
+        calls.append((url, payload, headers))
+        assert self.api_key == 'temporary-key'
+        assert payload['model'] == 'chosen-model'
+        assert payload['messages'][-1]['content'].endswith('Line 0.')
+        if provider == 'anthropic':
+            return {'content': [{'type': 'text', 'text': 'Перевод'}]}
+        return {'choices': [{'message': {'content': 'Перевод'}}]}
+
+    monkeypatch.setattr(PROVIDERS[provider], '_post_json', mock_post)
+    game = Path(project['path']) / 'game' / 'script.rpy'
+    game.write_text('label start:\n    e "Line 0."\n', encoding='utf-8')
+    settings = {**project, 'provider': provider, 'translation_model': 'chosen-model',
+                'base_url': '', 'text_only': True}
+    result = finish_job(client, '/api/studio/mod', settings)['result']
+    assert result['lines'][0]['text'] == 'Перевод'
+    assert len(calls) == 1 and calls[0][0] == PROVIDERS[provider].api_url
+    assert 'temporary-key' not in (Path(result['out']) / 'anygamevoice.json').read_text()
